@@ -619,6 +619,11 @@
 	};
 };
 
+&ipa {
+	firmware-name = "qcom/sdm670/sargo/ipa_fws.mbn";
+	status = "okay";
+};
+
 &lpi_tlmm {
 	/* sensor gpios are protected */
 	gpio-reserved-ranges = <0 8>, <12 6>;
