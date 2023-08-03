@@ -895,6 +895,7 @@ properties:
 
       - items:
           - enum:
+              - google,bonito-sdc
               - google,bonito-tianma
           - const: google,bonito
           - const: qcom,sdm670
