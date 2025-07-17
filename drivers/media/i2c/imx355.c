@@ -1548,12 +1548,11 @@ static int imx355_power_off(struct device *dev)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx355 *imx355 = to_imx355(sd);
 
-	clk_disable_unprepare(imx355->mclk);
-
 	if (imx355->reset_gpio)
 		gpiod_set_value_cansleep(imx355->reset_gpio, 0);
 
 	regulator_bulk_disable(ARRAY_SIZE(imx355->supplies), imx355->supplies);
+	clk_disable_unprepare(imx355->mclk);
 
 	return 0;
 }
