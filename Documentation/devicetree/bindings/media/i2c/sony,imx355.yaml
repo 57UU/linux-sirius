@@ -58,13 +58,13 @@ properties:
     required:
       - endpoint
 
-unevaluatedProperties: false
-
 required:
   - compatible
   - reg
   - clocks
   - port
+
+unevaluatedProperties: false
 
 examples:
   - |
