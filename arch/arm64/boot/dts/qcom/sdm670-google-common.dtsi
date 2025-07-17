@@ -1131,7 +1131,7 @@
 	cam_vio_pin: cam-vio-state {
 		pins = "gpio13";
 		function = "normal";
-		power-source = <PM8941_GPIO_VPH>;
+		power-source = <0>;
 		output-low;
 	};
 };
@@ -1181,7 +1181,7 @@
 	cam_front_ldo_pin: cam-front-state {
 		pins = "gpio4";
 		function = "normal";
-		power-source = <PM8941_GPIO_VPH>;
+		power-source = <0>;
 		output-low;
 	};
 
