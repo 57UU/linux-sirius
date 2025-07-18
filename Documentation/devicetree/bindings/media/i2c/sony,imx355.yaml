@@ -62,6 +62,10 @@ required:
   - compatible
   - reg
   - clocks
+  - clock-names
+  - avdd-supply
+  - dvdd-supply
+  - dovdd-supply
   - port
 
 unevaluatedProperties: false
