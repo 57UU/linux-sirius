@@ -1024,6 +1024,8 @@
 };
 
 &lpi_tlmm {
+	gpio-reserved-ranges = <0 8>, <12 6>;
+
 	sec_tdm_default: sec-tdm-default-state {
 		misc-pins {
 			pins = "gpio8", "gpio9";
