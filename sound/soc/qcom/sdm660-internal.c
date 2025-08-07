@@ -48,18 +48,18 @@ static int snd_sdm660_int_startup(struct snd_pcm_substream *stream)
 		if (data->pri_tdm_clk_count == 1)
 			snd_soc_dai_set_sysclk(cpu,
 				Q6AFE_LPASS_CLK_ID_PRI_TDM_IBIT,
-				12288000, SNDRV_PCM_STREAM_PLAYBACK);
+				TDM_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
 
 		for_each_rtd_codec_dais(rtd, i, codec) {
 			snd_soc_dai_set_fmt(codec, SND_SOC_DAIFMT_DSP_B
 						 | SND_SOC_DAIFMT_IB_IF);
 
 			snd_soc_dai_set_pll(codec, 0, 1,
-					    12288000,
-					    12288000 * 2);
+					    TDM_BCLK_RATE,
+					    TDM_BCLK_RATE * 2);
 
 			snd_soc_dai_set_sysclk(codec, 1,
-					       12288000 * 2,
+					       TDM_BCLK_RATE * 2,
 					       SNDRV_PCM_STREAM_PLAYBACK);
 		}
 		break;
@@ -183,7 +183,7 @@ static int snd_sdm660_int_hw_params(struct snd_pcm_substream *stream,
 	case PRIMARY_TDM_TX_0:
 		channels = params_channels(params);
 
-		ret = snd_soc_dai_set_tdm_slot(cpu, (1 << channels) - 1, 0, 8, 32);
+		ret = snd_soc_dai_set_tdm_slot(cpu, (1 << channels) - 1, 0, 8, 16);
 		if (ret) {
 			dev_err(cpu->dev, "set tdm slot failed\n");
 			return ret;
@@ -197,7 +197,7 @@ static int snd_sdm660_int_hw_params(struct snd_pcm_substream *stream,
 		}
 
 		for_each_rtd_codec_dais(rtd, i, codec) {
-			ret = snd_soc_dai_set_tdm_slot(codec, 0xff, 0, 8, 32);
+			ret = snd_soc_dai_set_tdm_slot(codec, 0xff, 0, 8, 16);
 			if (ret) {
 				dev_err(cpu->dev, "set tdm slot failed\n");
 				return ret;
