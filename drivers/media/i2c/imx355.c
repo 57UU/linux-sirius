@@ -100,12 +100,12 @@ struct imx355_mode {
 };
 
 struct imx355_hwcfg {
-	u32 ext_clk;			/* sensor external clk */
 	unsigned long link_freq_bitmap;
 };
 
 struct imx355 {
 	struct device *dev;
+	struct clk *clk;
 
 	struct v4l2_subdev sd;
 	struct media_pad pad;
@@ -132,7 +132,6 @@ struct imx355 {
 	 */
 	struct mutex mutex;
 
-	struct clk *mclk;
 	struct gpio_desc *reset_gpio;
 	struct regulator_bulk_data supplies[3];
 };
@@ -1549,7 +1548,7 @@ static int imx355_power_off(struct device *dev)
 	gpiod_set_value_cansleep(imx355->reset_gpio, 0);
 
 	regulator_bulk_disable(ARRAY_SIZE(imx355->supplies), imx355->supplies);
-	clk_disable_unprepare(imx355->mclk);
+	clk_disable_unprepare(imx355->clk);
 
 	return 0;
 }
@@ -1561,7 +1560,7 @@ static int imx355_power_on(struct device *dev)
 	struct imx355 *imx355 = to_imx355(sd);
 	int ret;
 
-	ret = clk_prepare_enable(imx355->mclk);
+	ret = clk_prepare_enable(imx355->clk);
 	if (ret) {
 		dev_err(dev, "failed to enable clocks: %d\n", ret);
 		return ret;
@@ -1581,7 +1580,7 @@ static int imx355_power_on(struct device *dev)
 	return 0;
 
 error_disable_clocks:
-	clk_disable_unprepare(imx355->mclk);
+	clk_disable_unprepare(imx355->clk);
 	return ret;
 }
 
@@ -1719,15 +1718,6 @@ static struct imx355_hwcfg *imx355_get_hwcfg(struct device *dev, struct imx355 *
 	if (!cfg)
 		goto out_err;
 
-	cfg->ext_clk = clk_get_rate(imx355->mclk);
-
-	dev_dbg(dev, "ext clk: %d", cfg->ext_clk);
-	if (cfg->ext_clk != IMX355_EXT_CLK) {
-		dev_err(dev, "external clock %d is not supported",
-			cfg->ext_clk);
-		goto out_err;
-	}
-
 	ret = v4l2_link_freq_to_bitmap(dev, bus_cfg.link_frequencies,
 				       bus_cfg.nr_of_link_frequencies,
 				       link_freq_menu_items,
@@ -1749,6 +1739,7 @@ out_err:
 static int imx355_probe(struct i2c_client *client)
 {
 	struct imx355 *imx355;
+	unsigned long freq;
 	size_t i;
 	int ret;
 
@@ -1760,8 +1751,16 @@ static int imx355_probe(struct i2c_client *client)
 
 	mutex_init(&imx355->mutex);
 
-	/* Initialize subdev */
-	v4l2_i2c_subdev_init(&imx355->sd, client, &imx355_subdev_ops);
+	imx355->clk = devm_v4l2_sensor_clk_get(imx355->dev, "mclk");
+	if (IS_ERR(imx355->clk))
+		return dev_err_probe(imx355->dev, PTR_ERR(imx355->clk),
+				     "failed to get clock\n");
+
+	freq = clk_get_rate(imx355->clk);
+	if (freq != IMX355_EXT_CLK)
+		return dev_err_probe(imx355->dev, -EINVAL,
+				     "external clock %lu is not supported\n",
+				     freq);
 
 	for (i = 0; i < ARRAY_SIZE(imx355_supply_names); i++)
 		imx355->supplies[i].supply = imx355_supply_names[i];
@@ -1782,12 +1781,8 @@ static int imx355_probe(struct i2c_client *client)
 		goto error_probe;
 	}
 
-	imx355->mclk = devm_v4l2_sensor_clk_get(imx355->dev, "mclk");
-	if (IS_ERR(imx355->mclk)) {
-		ret = dev_err_probe(imx355->dev, PTR_ERR(imx355->mclk),
-				    "failed to get mclk");
-		goto error_probe;
-	}
+	/* Initialize subdev */
+	v4l2_i2c_subdev_init(&imx355->sd, client, &imx355_subdev_ops);
 
 	imx355->hwcfg = imx355_get_hwcfg(imx355->dev, imx355);
 	if (!imx355->hwcfg) {
