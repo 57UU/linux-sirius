@@ -28,8 +28,7 @@ properties:
     maxItems: 1
 
   clock-names:
-    items:
-      - const: mclk
+    const: mclk
 
   avdd-supply:
     description: Analog power supply.
