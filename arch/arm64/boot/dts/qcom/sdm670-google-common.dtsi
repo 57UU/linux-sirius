@@ -1143,12 +1143,6 @@
 };
 
 &pm660l_codec {
-	clocks = <&q6afecc LPASS_CLK_ID_INT_MCLK_0 LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
-	clock-names = "mclk";
-
-	assigned-clocks = <&q6afecc LPASS_CLK_ID_INT_MCLK_0 LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
-	assigned-clock-rates = <9600000>;
-
 	vdd-cdc-io-supply = <&vreg_l10a_1p8>;
 	vdd-cdc-tx-rx-cx-supply = <&vreg_l1b_0p925>;
 	vdd-micbias-supply = <&vreg_l7b_3p125>;
