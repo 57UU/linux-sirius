@@ -965,12 +965,11 @@ static void genpd_power_off(struct generic_pm_domain *genpd, bool one_dev_on,
 	 * The domain is already in the "power off" state.
 	 * System suspend is in progress.
 	 * The domain is configured as always on.
-	 * The domain was on at boot and still need to stay on.
 	 * The domain has a subdomain being powered on.
 	 */
 	if (!genpd_status_on(genpd) || genpd->prepared_count > 0 ||
 	    genpd_is_always_on(genpd) || genpd_is_rpm_always_on(genpd) ||
-	    genpd->stay_on || atomic_read(&genpd->sd_count) > 0)
+	    atomic_read(&genpd->sd_count) > 0)
 		return;
 
 	/*
@@ -1381,9 +1380,8 @@ static int __init genpd_power_off_unused(void)
 	pr_info("genpd: Disabling unused power domains\n");
 	mutex_lock(&gpd_list_lock);
 
-	list_for_each_entry(genpd, &gpd_list, gpd_list_node) {
+	list_for_each_entry(genpd, &gpd_list, gpd_list_node)
 		genpd_queue_power_off_work(genpd);
-	}
 
 	mutex_unlock(&gpd_list_lock);
 
@@ -2363,18 +2361,6 @@ static void genpd_lock_init(struct generic_pm_domain *genpd)
 	}
 }
 
-#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
-static void genpd_set_stay_on(struct generic_pm_domain *genpd, bool is_off)
-{
-	genpd->stay_on = !genpd_is_no_stay_on(genpd) && !is_off;
-}
-#else
-static void genpd_set_stay_on(struct generic_pm_domain *genpd, bool is_off)
-{
-	genpd->stay_on = false;
-}
-#endif
-
 /**
  * pm_genpd_init - Initialize a generic I/O PM domain object.
  * @genpd: PM domain object to initialize.
@@ -2400,7 +2386,6 @@ int pm_genpd_init(struct generic_pm_domain *genpd,
 	INIT_WORK(&genpd->power_off_work, genpd_power_off_work_fn);
 	atomic_set(&genpd->sd_count, 0);
 	genpd->status = is_off ? GENPD_STATE_OFF : GENPD_STATE_ON;
-	genpd_set_stay_on(genpd, is_off);
 	genpd->sync_state = GENPD_SYNC_STATE_OFF;
 	genpd->device_count = 0;
 	genpd->provider = NULL;
