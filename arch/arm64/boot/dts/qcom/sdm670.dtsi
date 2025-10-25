@@ -3385,7 +3385,7 @@
 				};
 
 				data1-pins {
-					pins = "gpio27", "gpio29";
+					pins = "gpio27";
 					function = "dmic1_data";
 					drive-strength = <8>;
 					input-enable;
