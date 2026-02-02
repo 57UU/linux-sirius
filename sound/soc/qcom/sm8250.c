@@ -17,6 +17,7 @@
 #include "sdw.h"
 
 #define MI2S_BCLK_RATE		1536000
+#define TDM_BCLK_RATE		6144000
 
 struct sm8250_snd_data {
 	bool stream_prepared[AFE_PORT_MAX];
@@ -78,6 +79,7 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct snd_soc_dai *codec_dai = snd_soc_rtd_to_codec(rtd, 0);
+	int i;
 
 	switch (cpu_dai->id) {
 	case PRIMARY_MI2S_RX:
@@ -112,6 +114,41 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
 		snd_soc_dai_set_fmt(cpu_dai, fmt);
 		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
 		break;
+	case PRIMARY_TDM_TX_0:
+		codec_dai_fmt |= SND_SOC_DAIFMT_IB_IF | SND_SOC_DAIFMT_DSP_B;
+		snd_soc_dai_set_sysclk(cpu_dai,
+			Q6AFE_LPASS_CLK_ID_PRI_TDM_IBIT,
+			TDM_BCLK_RATE, SNDRV_PCM_STREAM_CAPTURE);
+		snd_soc_dai_set_fmt(cpu_dai, fmt);
+		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
+
+		snd_soc_dai_set_pll(codec_dai, 0, 1,
+				    TDM_BCLK_RATE,
+				    TDM_BCLK_RATE * 2);
+		snd_soc_dai_set_sysclk(codec_dai, 1,
+				       TDM_BCLK_RATE * 2,
+				       SNDRV_PCM_STREAM_CAPTURE);
+
+		break;
+	case SECONDARY_TDM_RX_0:
+		codec_dai_fmt |= SND_SOC_DAIFMT_IB_NF | SND_SOC_DAIFMT_DSP_A;
+		snd_soc_dai_set_sysclk(cpu_dai,
+			Q6AFE_LPASS_CLK_ID_SEC_TDM_IBIT,
+			TDM_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
+		snd_soc_dai_set_fmt(cpu_dai, fmt);
+
+		for_each_rtd_codec_dais(rtd, i, codec_dai) {
+			snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
+			snd_soc_dai_set_sysclk(codec_dai, 0,
+					       TDM_BCLK_RATE,
+					       SNDRV_PCM_STREAM_PLAYBACK);
+			snd_soc_component_set_sysclk(codec_dai->component,
+					       0, 0,
+					       TDM_BCLK_RATE,
+					       SNDRV_PCM_STREAM_PLAYBACK);
+		}
+
+		break;
 	case LPI_MI2S_RX_0:
 		codec_dai_fmt |= SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_I2S;
 		snd_soc_dai_set_sysclk(cpu_dai,
@@ -135,6 +172,69 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
 	return qcom_snd_sdw_startup(substream);
 }
 
+static unsigned int tdm_slot_off[] = {
+	0, 4, 8, 12, 16, 20, 24, 28
+};
+
+static int sm8250_snd_hw_params(struct snd_pcm_substream *substream,
+				struct snd_pcm_hw_params *params)
+{
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *codec_dai = snd_soc_rtd_to_codec(rtd, 0);
+	unsigned int channels;
+	int ret;
+
+	switch (cpu_dai->id) {
+	case PRIMARY_TDM_TX_0:
+		channels = params_channels(params);
+
+		ret = snd_soc_dai_set_tdm_slot(cpu_dai, (1 << channels) - 1, 0, 8, 16);
+		if (ret) {
+			dev_err(cpu_dai->dev, "set tdm slot failed\n");
+			return ret;
+		}
+
+		ret = snd_soc_dai_set_channel_map(cpu_dai,
+						  channels, tdm_slot_off,
+						  0, NULL);
+		if (ret) {
+			dev_err(cpu_dai->dev, "set channel map failed\n");
+			return ret;
+		}
+
+		ret = snd_soc_dai_set_tdm_slot(codec_dai, 0xff, 0, 8, 16);
+		if (ret) {
+			dev_err(cpu_dai->dev, "set tdm slot failed\n");
+			return ret;
+		}
+
+		break;
+	case SECONDARY_TDM_RX_0:
+		channels = params_channels(params);
+
+		ret = snd_soc_dai_set_tdm_slot(cpu_dai, 0, (1 << channels) - 1, 8, 16);
+		if (ret) {
+			dev_err(cpu_dai->dev, "set tdm slot failed\n");
+			return ret;
+		}
+
+		ret = snd_soc_dai_set_channel_map(cpu_dai,
+						  0, NULL,
+						  channels, tdm_slot_off);
+		if (ret) {
+			dev_err(cpu_dai->dev, "set channel map failed\n");
+			return ret;
+		}
+
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int sm8250_snd_prepare(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
@@ -155,6 +255,7 @@ static int sm8250_snd_hw_free(struct snd_pcm_substream *substream)
 
 static const struct snd_soc_ops sm8250_be_ops = {
 	.startup = sm8250_snd_startup,
+	.hw_params = sm8250_snd_hw_params,
 	.shutdown = qcom_snd_sdw_shutdown,
 	.hw_free = sm8250_snd_hw_free,
 	.prepare = sm8250_snd_prepare,
