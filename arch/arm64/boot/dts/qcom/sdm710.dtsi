@@ -60,9 +60,6 @@
 		power-domains = <&rpmhpd SDM670_CX>;
 		operating-points-v2 = <&sdhc2_opp_table>;
 
-		pinctrl-0 = <&sdc2_state_on>;
-		pinctrl-1 = <&sdc2_state_off>;
-
 		status = "disabled";
 
 		sdhc2_opp_table: opp-table {
@@ -188,24 +185,6 @@
 	};
 };
 
-&qupv3_id_1 {
-	uart12: serial@a9000 {
-			compatible = "qcom,geni-uart";
-			reg = <0 0x00a90000 0 0x4000>;
-			clock-names = "se";
-			clocks = <&gcc GCC_QUPV3_WRAP1_S4_CLK>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&qup_uart12_default>;
-			interrupts = <GIC_SPI 357 IRQ_TYPE_LEVEL_HIGH>;
-			operating-points-v2 = <&qup_opp_table>;
-			power-domains = <&rpmhpd SDM670_CX>;
-			interconnects = <&aggre1_noc MASTER_BLSP_2 0 &config_noc SLAVE_BLSP_2 0>,
-					<&gladiator_noc MASTER_AMPSS_M0 0 &config_noc SLAVE_BLSP_2 0>;
-			interconnect-names = "qup-core", "qup-config";
-			status = "disabled";
-	};
-};
-
 &tlmm {
 	sdc2_state_on: sdc2-on-state {
 		clk-pins {
@@ -226,11 +205,10 @@
 			drive-strength = <10>;
 		};
 
-		// Not currently supported in sdm670-pinctrl
-//		rclk-pins {
-//			pins = "sdc2_rclk";
-//			bias-pull-down;
-//		};
+		rclk-pins {
+			pins = "sdc2_rclk";
+			bias-pull-down;
+		};
 	};
 
 	sdc2_state_off: sdc2-off-state {
@@ -252,17 +230,9 @@
 			drive-strength = <2>;
 		};
 
-		// Not currently supported in sdm670-pinctrl
-//		rclk-pins {
-//			pins = "sdc2_rclk";
-//			bias-pull-down;
-//		};
-	};
-
-	qup_uart12_default: qup-uart12-default-state {
-		pins = "gpio92", "gpio96";
-		function = "qup7";
-		drive-strength = <2>;
-		bias-disable;
+		rclk-pins {
+			pins = "sdc2_rclk";
+			bias-pull-down;
+		};
 	};
 };
