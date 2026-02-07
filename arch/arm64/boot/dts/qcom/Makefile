@@ -267,6 +267,7 @@ dtb-$(CONFIG_ARCH_QCOM)	+= sdm660-xiaomi-lavender.dtb
 dtb-$(CONFIG_ARCH_QCOM)	+= sdm670-google-sargo.dtb
 dtb-$(CONFIG_ARCH_QCOM)	+= sdm670-google-bonito-sdc.dtb
 dtb-$(CONFIG_ARCH_QCOM)	+= sdm670-google-bonito-tianma.dtb
+dtb-$(CONFIG_ARCH_QCOM)	+= sdm710-xiaomi-pyxis.dtb
 dtb-$(CONFIG_ARCH_QCOM)	+= sdm845-db845c.dtb
 
 sdm845-db845c-navigation-mezzanine-dtbs	:= sdm845-db845c.dtb sdm845-db845c-navigation-mezzanine.dtbo
