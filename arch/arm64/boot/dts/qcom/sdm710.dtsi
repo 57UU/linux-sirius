@@ -60,6 +60,9 @@
 		power-domains = <&rpmhpd SDM670_CX>;
 		operating-points-v2 = <&sdhc2_opp_table>;
 
+		pinctrl-0 = <&sdc2_state_on>;
+		pinctrl-1 = <&sdc2_state_off>;
+
 		status = "disabled";
 
 		sdhc2_opp_table: opp-table {
@@ -199,7 +202,7 @@
 			interconnects = <&aggre1_noc MASTER_BLSP_2 0 &config_noc SLAVE_BLSP_2 0>,
 					<&gladiator_noc MASTER_AMPSS_M0 0 &config_noc SLAVE_BLSP_2 0>;
 			interconnect-names = "qup-core", "qup-config";
-			status = "dusabled";
+			status = "disabled";
 	};
 };
 
@@ -223,10 +226,11 @@
 			drive-strength = <10>;
 		};
 
-		rclk-pins {
-			pins = "sdc2_rclk";
-			bias-pull-down;
-		};
+		// Not currently supported in sdm670-pinctrl
+//		rclk-pins {
+//			pins = "sdc2_rclk";
+//			bias-pull-down;
+//		};
 	};
 
 	sdc2_state_off: sdc2-off-state {
@@ -248,10 +252,11 @@
 			drive-strength = <2>;
 		};
 
-		rclk-pins {
-			pins = "sdc2_rclk";
-			bias-pull-down;
-		};
+		// Not currently supported in sdm670-pinctrl
+//		rclk-pins {
+//			pins = "sdc2_rclk";
+//			bias-pull-down;
+//		};
 	};
 
 	qup_uart12_default: qup-uart12-default-state {
@@ -260,5 +265,4 @@
 		drive-strength = <2>;
 		bias-disable;
 	};
-
 };
