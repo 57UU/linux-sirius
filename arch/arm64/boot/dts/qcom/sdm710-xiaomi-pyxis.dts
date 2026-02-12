@@ -1017,6 +1017,12 @@
 	status = "okay";
 };
 
+&pm660_haptics {
+	status = "okay";
+	// Motor needs 3.2V 800mA.
+	// HAP_ILIM_800_MA should be set.
+};
+
 &pm660_rradc {
 	status = "okay";
 };
