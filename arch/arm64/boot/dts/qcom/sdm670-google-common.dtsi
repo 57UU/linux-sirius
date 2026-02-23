@@ -36,6 +36,7 @@
 
 	aliases {
 		hsuart0 = &uart6;
+		serial0 = &uart12;
 	};
 
 	battery: battery {
@@ -1271,6 +1272,16 @@
 	};
 };
 
+&qup_uart12_rx {
+	drive-strength = <2>;
+	bias-pull-up;
+};
+
+&qup_uart12_tx {
+	drive-strength = <2>;
+	bias-disable;
+};
+
 &sdhc_1 {
 	supports-cqe;
 	mmc-hs200-1_8v;
@@ -1493,6 +1504,10 @@
 		vddch0-supply = <&vreg_l19a_3p3>;
 		max-speed = <3200000>;
 	};
+};
+
+&uart12 {
+	status = "okay";
 };
 
 &usb_1_hsphy {
