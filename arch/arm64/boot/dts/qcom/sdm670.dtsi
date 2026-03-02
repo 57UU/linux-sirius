@@ -2875,6 +2875,7 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 			gpio-ranges = <&lpi_tlmm 0 0 32>;
+			status = "disabled";
 
 			cdc_pdm_default: cdc-pdm-default-state {
 				clk-pins {
