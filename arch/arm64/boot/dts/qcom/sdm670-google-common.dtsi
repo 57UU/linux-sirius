@@ -824,6 +824,7 @@
 
 		port {
 			cam_front_endpoint: endpoint {
+				data-lanes = <1 2 3 4>;
 				link-frequencies = /bits/ 64 <360000000>;
 				remote-endpoint = <&camss_endpoint1>;
 			};
