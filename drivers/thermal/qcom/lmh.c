@@ -146,7 +146,7 @@ static int lmh_probe(struct platform_device *pdev)
 	 */
 	if (cpu_id == 0) {
 		node_id = LMH_CLUSTER0_NODE_ID;
-	} else if (cpu_id == 4) {
+	} else if (cpu_id == 4 || cpu_id == 6) {
 		node_id = LMH_CLUSTER1_NODE_ID;
 	} else {
 		dev_err(dev, "Wrong CPU id associated with LMh node\n");
