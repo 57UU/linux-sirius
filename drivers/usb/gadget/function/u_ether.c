@@ -896,6 +896,28 @@ void gether_set_gadget(struct net_device *net, struct usb_gadget *g)
 }
 EXPORT_SYMBOL_GPL(gether_set_gadget);
 
+int gether_attach_gadget(struct net_device *net, struct usb_gadget *g)
+{
+	int ret;
+
+	ret = device_move(&net->dev, &g->dev, DPM_ORDER_DEV_AFTER_PARENT);
+	if (ret)
+		return ret;
+
+	gether_set_gadget(net, g);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(gether_attach_gadget);
+
+void gether_detach_gadget(struct net_device *net)
+{
+	struct eth_dev *dev = netdev_priv(net);
+
+	device_move(&net->dev, NULL, DPM_ORDER_NONE);
+	dev->gadget = NULL;
+}
+EXPORT_SYMBOL_GPL(gether_detach_gadget);
+
 int gether_set_dev_addr(struct net_device *net, const char *dev_addr)
 {
 	struct eth_dev *dev;
@@ -1094,21 +1116,6 @@ void gether_cleanup(struct eth_dev *dev)
 	free_netdev(dev->net);
 }
 EXPORT_SYMBOL_GPL(gether_cleanup);
-
-void gether_unregister_free_netdev(struct net_device *net)
-{
-	if (!net)
-		return;
-
-	struct eth_dev *dev = netdev_priv(net);
-
-	if (net->reg_state == NETREG_REGISTERED) {
-		unregister_netdev(net);
-		flush_work(&dev->work);
-	}
-	free_netdev(net);
-}
-EXPORT_SYMBOL_GPL(gether_unregister_free_netdev);
 
 /**
  * gether_connect - notify network layer that USB link is active
