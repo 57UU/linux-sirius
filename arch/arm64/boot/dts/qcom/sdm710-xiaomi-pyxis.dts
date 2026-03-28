@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
+/*
+ * Device tree for Xiaomi Mi 9 Lite (xiaomi-pyxis), based largely on
+ * sdm670-google-sargo and downstream vendor kernel.
+ *
+ * Copyright (c) 2026, The Linux Foundation. All rights reserved.
+*/
 
 /dts-v1/;
 #include <dt-bindings/firmware/qcom,scm.h>
@@ -45,7 +51,6 @@
 
 	chosen {
 		stdout-path = "framebuffer";
-
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
@@ -67,6 +72,12 @@
 
 		xbl_mem: memory@85e00000 {
 			reg = <0 0x85e00000 0 0x1c0000>;
+			no-map;
+		};
+
+		// Looks like this is needed to avoid random crashes...
+		removed_region: removed-region {
+			reg = <0 0x85fc0000 0 0x4b40000>;
 			no-map;
 		};
 
@@ -119,7 +130,6 @@
 			compatible = "qcom,rmtfs-mem";
 			reg = <0 0xfc201000 0 0x200000>;
 			no-map;
-
 			qcom,client-id = <1>;
 			qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>;
 		};
@@ -143,6 +153,128 @@
 			gpios = <&pm660l_gpios 7 GPIO_ACTIVE_LOW>;
 		};
 	};
+
+	// AUDIO: WIP
+	sound: sound {
+		compatible = "qcom,sdm660-internal-sndcard";
+		model = "Xiaomi Mi 9 Lite";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cdc_pdm_default>,
+			<&cdc_dmic_default>,
+			<&pri_tdm_default>;
+
+		audio-routing = "Analog PDM_RX1", "Digital PDM_RX1",
+			"Analog PDM_RX2", "Digital PDM_RX2",
+			"Analog PDM_RX3", "Digital PDM_RX3",
+			"Digital LPASS_PDM_TX", "Analog PDM_TX",
+			"Analog AMIC2", "Analog MIC BIAS External2",
+			"Stereo1 DMIC Mux", "Analog MIC BIAS Internal1";
+
+		mm1-dai-link {
+			link-name = "MultiMedia1";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+			};
+		};
+
+		mm2-dai-link {
+			link-name = "MultiMedia2";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+			};
+		};
+
+		mm3-dai-link {
+			link-name = "MultiMedia3";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+			};
+		};
+
+		mm4-dai-link {
+			link-name = "MultiMedia4";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA4>;
+			};
+		};
+
+		voicemmode1-dai-link {
+			link-name = "VoiceMMode1";
+
+			cpu {
+				sound-dai = <&q6voicedai VOICEMMODE1>;
+			};
+		};
+
+		pri-tdm-tx-link {
+			link-name = "Primary TDM0 Capture";
+
+			cpu {
+				sound-dai = <&q6afedai PRIMARY_TDM_TX_0>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&spk_amp 0>;
+			};
+		};
+
+		sec-tdm-rx-link {
+			link-name = "Secondary TDM0 Playback";
+
+			cpu {
+				sound-dai = <&q6afedai SECONDARY_TDM_RX_0>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&spk_amp 0>;
+			};
+		};
+
+		int0-mi2s-rx-link {
+			link-name = "Internal MI2S Playback";
+
+			cpu {
+				sound-dai = <&q6afedai INT0_MI2S_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&pm660l_codec 0>, <&lpass_codec 0>;
+			};
+		};
+
+		int3-mi2s-tx-link {
+				link-name = "Internal MI2S Capture";
+
+			cpu {
+				sound-dai = <&q6afedai INT3_MI2S_TX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&pm660l_codec 1>, <&lpass_codec 1>;
+			};
+		};
+};
 
 	extcon_usb: extcon-usb {
 		compatible = "linux,extcon-usb-gpio";
@@ -168,9 +300,7 @@
 	disp_3p0_en: display-3p0-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "disp_3p0_en";
-		regulator-min-microvolt = <3312000>;
-		regulator-max-microvolt = <3312000>;
-		gpio = <&tlmm 76 GPIO_ACTIVE_HIGH>;
+		gpios = <&tlmm 76 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 		regulator-boot-on;
 	};
@@ -180,6 +310,68 @@
 		regulator-name = "vreg_s2b";
 		regulator-min-microvolt = <1050000>;
 		regulator-max-microvolt = <1050000>;
+	};
+
+	/* Camera sensors */
+	// IMX586: DVDD, AVDD
+	cam_wide_vdd_ldo: cam-wide-vdd-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_wide_vdd_ldo";
+		regulator-min-microvolt = <1352000>;
+		regulator-max-microvolt = <1352000>;
+		regulator-enable-ramp-delay = <135>;
+
+		gpios = <&pm660l_gpios 2 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+
+		pinctrl-0 = <&cam_wide_vdd_ldo_pin>;
+		pinctrl-names = "default";
+	};
+
+	// S5K3M5: AVDD
+	cam_tele_vdd_ldo: cam-tele-vdd-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_tele_vdd_ldo";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		regulator-enable-ramp-delay = <135>;
+
+		gpios = <&pm660l_gpios 3 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+
+		pinctrl-0 = <&cam_tele_ldo_pin>;
+		pinctrl-names = "default";
+	};
+
+	// IMX586: VCM (Autofocus)
+	cam_wide_vcm_ldo: cam-wide-vcm-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_wide_vcm_ldo";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		regulator-enable-ramp-delay = <135>;
+
+		gpios = <&pm660l_gpios 4 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+
+		pinctrl-0 = <&cam_wide_vcm_ldo_pin>;
+		pinctrl-names = "default";
+	};
+
+	// S5K3T1: AVDD, DVDD
+	cam_front_vdd_ldo: cam-front-vdd-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_front_vdd_ldo";
+		gpios = <&tlmm 8 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	// S5K3P9: DVDD
+	cam_uw_vdd_ldo: cam-uw-vdd-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_uw_vdd_ldo";
+		gpios = <&tlmm 27 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
 	};
 };
 
@@ -444,7 +636,7 @@
 		compatible = "nxp,nxp-nci-i2c";
 		reg = <0x28>;
 
-		interrupts-extended = <&tlmm 44 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts-extended = <&tlmm 44 IRQ_TYPE_EDGE_RISING>;
 		enable-gpios = <&tlmm 12 GPIO_ACTIVE_HIGH>;
 		firmware-gpios = <&tlmm 43 GPIO_ACTIVE_HIGH>;
 
@@ -470,6 +662,7 @@
 		vdd-supply = <&vreg_l13a_1p8>;
 	};
 };
+
 
 /* Touchscreen */
 &i2c9 {
@@ -503,6 +696,15 @@
 	// smb1355@c
 };
 
+/* Xiaomi did cursed stuff with MIPI switch to switch between front and
+ * ultrawide cameras. CSI2 MIPI switch is controlled by SoC GPIO_25 */
+
+/* CSI_0: Sony IMX586. CAM_W_MCLK0 (GPIO_13), I2C0.
+ * CSI_1: Two cameras hooked up via TS5MP646 MIPI switch:
+ * - Port A: Front - Samsung S5K3T1. CAM_F_MCLK2 (GPIO_15), I2C1.
+ * - Port B: Ultrawide - Samsung S5K3P9. CAM_U_MCLK3 (GPIO_16), I2C0.
+ * CSI_2: Samsung S5K3M5. CAM_T_MCLK1 (GPIO_13), I2C1. Only a single-lane. */
+
 /* Camera subsystem */
 &camss {
 	vdda-phy-supply = <&vreg_l11a_1p8>;
@@ -513,7 +715,7 @@
 			camss_endpoint0: endpoint {
 				clock-lanes = <7>;
 				data-lanes = <0 1 2 3>;
-				remote-endpoint = <&cam_rear_endpoint>;
+				remote-endpoint = <&cam_rear_main_endpoint>;
 			};
 		};
 
@@ -521,7 +723,15 @@
 			camss_endpoint1: endpoint {
 				clock-lanes = <7>;
 				data-lanes = <0 1 2 3>;
-				remote-endpoint = <&cam_front_endpoint>;
+				remote-endpoint = <&cam_dual_endpoint>;
+			};
+		};
+
+		port@2 {
+			camss_endpoint2: endpoint {
+				clock-lanes = <3>;
+				data-lanes = <0>;
+				remote-point = <&cam_rear_tele_endpoint>;
 			};
 		};
 	};
@@ -536,46 +746,62 @@
 };
 
 &cci_i2c0 {
-	camera@1a {
+	camera@50 {
 		compatible = "sony,imx586";
-		reg = <0x1a>;
+		reg = <0x50>;
 
 		clocks = <&camcc CAM_CC_MCLK0_CLK>;
 		clock-names = "xvclk";
-
 		clock-frequency = <24000000>;
-
 		assigned-clocks = <&camcc CAM_CC_MCLK0_CLK>;
 		assigned-clock-rates = <24000000>;
 
 		reset-gpios = <&tlmm 30 GPIO_ACTIVE_LOW>;
 
 		pinctrl-names = "default";
-		pinctrl-0 = <&cam_rear_default>;
-
-		rotation = <90>;
-		orientation = <1>;
+		pinctrl-0 = <&cam_rear_main_default>;
 
 		port {
-			cam_rear_endpoint: endpoint {
+			cam_rear_main_endpoint: endpoint {
 				data-lanes = <0 1 2 3>;
 				link-frequencies = /bits/ 64 <321000000 636000000>;
 				remote-endpoint = <&camss_endpoint0>;
 			};
 		};
 	};
+
+	camera@51 {
+		compatible = "samsung,s5k3p9";
+		reg = <0x51>;
+
+		clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		clock-names = "mclk";
+		clock-frequency = <19200000>;
+		assigned-clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		assigned-clock-rates = <24000000>;
+
+		reset-gpios = <&tlmm 24 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_rear_uw_default>;
+
+//		port {
+//			cam_dual_endpoint: endpoint {
+//				data-lanes = <0 1 2 3>;
+//				link-frequencies = /bits/ 64 <360000000>;
+//				remote-endpoint = <&camss_endpoint2>;
+//		};
+	};
 };
 
 &cci_i2c1 {
-	camera@1a {
+	camera@50 {
 		compatible = "samsung,s5k3t1";
-		reg = <0x1a>;
+		reg = <0x50>;
 
 		clocks = <&camcc CAM_CC_MCLK2_CLK>;
 		clock-names = "mclk";
-
 		clock-frequency = <19200000>;
-
 		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;
 		assigned-clock-rates = <24000000>;
 
@@ -584,14 +810,35 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&cam_front_default>;
 
-		rotation = <270>;
-		orientation = <0>;
-
 		port {
-			cam_front_endpoint: endpoint {
-				data-lanes = <0 1>;
+			cam_dual_endpoint: endpoint {
+				data-lanes = <0 1 2 3>;
 				link-frequencies = /bits/ 64 <360000000>;
 				remote-endpoint = <&camss_endpoint1>;
+			};
+		};
+	};
+
+	camera@51 {
+		compatible = "samsung,s5k3m5";
+		reg = <0x51>;
+
+		clocks = <&camcc CAM_CC_MCLK1_CLK>;
+		clock-names = "mclk";
+		clock-frequency = <19200000>;
+		assigned-clocks = <&camcc CAM_CC_MCLK1_CLK>;
+		assigned-clock-rates = <24000000>;
+
+		reset-gpios = <&tlmm 23 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_rear_tele_default>;
+
+		port {
+			cam_rear_tele_endpoint: endpoint {
+				data-lanes = <0 1 2 3>;
+				link-frequencies = /bits/ 64 <360000000>;
+				remote-endpoint = <&camss_endpoint2>;
 			};
 		};
 	};
@@ -607,7 +854,6 @@
 	vdd-3.3-ch0-supply = <&vreg_l19a_3p3>;
 
 	qcom,snoc-host-cap-8bit-quirk;
-	qcom,ath10k-calibration-variant = "xiaomi_pyxis";
 };
 
 &uart6 {
@@ -670,41 +916,92 @@
 	status = "okay";
 };
 
-/* Audio */
+/* Audio - WIP */
 &pm660l_codec {
 	vdd-cdc-io-supply = <&vreg_l13a_1p8>;
 	vdd-cdc-tx-rx-cx-supply = <&vreg_l1b_0p925>;
 	vdd-micbias-supply = <&vreg_l3b_3p0>;
 
+	qcom,mbhc-vthreshold-low = <75 150 237 437 437>;
+	qcom,mbhc-vthreshold-high = <75 150 237 437 437>;
+
 	status = "okay";
 };
 
 &lpass_codec {
+	clocks = <&q6afecc LPASS_CLK_ID_INT_MCLK_0 LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+	         <&int_cdc_bclk>;
+	clock-names = "mclk", "ahbix-clk";
+
+	assigned-clocks = <&q6afecc LPASS_CLK_ID_INT_MCLK_0 LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
+	assigned-clock-rates = <9600000>;
+
 	status = "okay";
 };
 
-&lpi_tlmm {
-	sec_tdm_default: sec-tdm-default-state {
-		misc-pins {
-			pins = "gpio18", "gpio19";
-			function = "sec_tdm";
-			drive-strength = <8>;
-			bias-disable;
-		};
+//&lpi_tlmm {
+//	status = "okay";
+//};
 
-		din-pins {
-			pins = "gpio21", "gpio23";
-			function = "sec_tdm_din";
-			drive-strength = <8>;
-			bias-disable;
-		};
+&q6afedai {
+	dai@19 {
+		reg = <PRIMARY_TDM_TX_0>;
 
-		dout-pins {
-			pins = "gpio20";
-			function = "sec_tdm_dout";
-			drive-strength = <8>;
-			bias-disable;
-		};
+		qcom,tdm-sync-mode = <0>;
+		qcom,tdm-sync-src = <1>;
+		qcom,tdm-data-out = <0>;
+		qcom,tdm-invert-sync = <0>;
+		qcom,tdm-data-delay = <1>;
+		qcom,tdm-data-align = <0>;
+	};
+
+	dai@28 {
+		reg = <SECONDARY_TDM_RX_0>;
+
+		qcom,tdm-sync-mode = <0>;
+		qcom,tdm-sync-src = <1>;
+		qcom,tdm-data-out = <0>;
+		qcom,tdm-invert-sync = <0>;
+		qcom,tdm-data-delay = <1>;
+		qcom,tdm-data-align = <0>;
+	};
+
+	dai@81 {
+		reg = <INT0_MI2S_RX>;
+		qcom,sd-lines = <0 1>;
+	};
+
+	dai@88 {
+		reg = <INT3_MI2S_TX>;
+		qcom,sd-lines = <0 1>;
+	};
+};
+
+&q6asmdai {
+	dai@0 {
+		reg = <0>;
+	};
+
+	dai@1 {
+		reg = <1>;
+	};
+
+	dai@2 {
+		reg = <2>;
+	};
+
+	dai@3 {
+		reg = <3>;
+	};
+};
+
+&q6core {
+		qcom,acdb-name = "qcom/sdm710/pyxis/Global_cal.acdb";
+};
+
+&q6voicedai {
+	dai@1 {
+		reg = <VOICEMMODE1>;
 	};
 };
 
@@ -718,6 +1015,12 @@
 	monitored-battery = <&battery>;
 	power-supplies = <&pm660_charger>;
 	status = "okay";
+};
+
+&pm660_haptics {
+	status = "okay";
+	// Motor needs 3.2V 800mA.
+	// HAP_ILIM_800_MA should be set.
 };
 
 &pm660_rradc {
@@ -738,7 +1041,7 @@
 };
 
 &pm660l_gpios {
-	cam_rear_ldo_pin: cam-rear-state {
+	cam_wide_vdd_ldo_pin: cam-rear-state {
 		pins = "gpio2";
 		function = "normal";
 		power-source = <PM8941_GPIO_VPH>;
@@ -747,6 +1050,13 @@
 
 	cam_tele_ldo_pin: cam-tele-state {
 		pins = "gpio3";
+		function = "normal";
+		power-source = <PM8941_GPIO_VPH>;
+		output-low;
+	};
+
+	cam_wide_vcm_ldo_pin: cam-rear-state {
+		pins = "gpio4";
 		function = "normal";
 		power-source = <PM8941_GPIO_VPH>;
 		output-low;
@@ -852,14 +1162,14 @@
 		ts-irq-pins {
 			pins = "gpio125";
 			function = "gpio";
-			drive-strength = <16>;
+			drive-strength = <10>;
 			bias-pull-up;
 		};
 
 		ts-reset-pins {
 			pins = "gpio5";
 			function = "gpio";
-			drive-strength = <16>;
+			drive-strength = <10>;
 			bias-pull-up;
 		};
 	};
@@ -868,69 +1178,14 @@
 		ts-irq-pins {
 			pins = "gpio125";
 			function = "gpio";
-			drive-strength = <16>;
-			bias-pull-down;
+			drive-strength = <10>;
+			bias-disable;
 		};
 
 		ts-reset-pins {
 			pins = "gpio5";
 			function = "gpio";
-			drive-strength = <16>;
-			bias-pull-down;
-		};
-	};
-
-	/* GPIOs for MicroSD */
-	sdcard_default: sdc2-default-state {
-		clk-pins {
-			pins = "sdc2_clk";
-			drive-strength = <16>;
-			bias-disable;
-		};
-
-		cmd-pins {
-			pins = "sdc2_cmd";
 			drive-strength = <10>;
-			bias-pull-up;
-		};
-
-		data-pins {
-			pins = "sdc2_data";
-			drive-strength = <10>;
-			bias-pull-up;
-		};
-
-		cd-pins {
-			pins = "gpio126";
-			function = "gpio";
-			drive-strength = <2>;
-			bias-pull-up;
-		};
-	};
-
-	sdcard_sleep: sdc2-sleep-state {
-		clk-pins {
-			pins = "sdc2_clk";
-			drive-strength = <2>;
-			bias-disable;
-		};
-
-		cmd-pins {
-			pins = "sdc2_cmd";
-			drive-strength = <2>;
-			bias-pull-up;
-		};
-
-		data-pins {
-			pins = "sdc2_data";
-			drive-strength = <2>;
-			bias-pull-up;
-		};
-
-		cd-pins {
-			pins = "gpio126";
-			function = "gpio";
-			drive-strength = <2>;
 			bias-disable;
 		};
 	};
@@ -941,68 +1196,13 @@
 		function = "gpio";
 		drive-strength = <2>;
 		bias-pull-up;
-	};
+};
 
 	nfc_sleep: nfc-sleep-state {
 		pins = "gpio12", "gpio43", "gpio44", "gpio116";
 		function = "gpio";
 		drive-strength = <2>;
 		bias-disable;
-	};
-
-	/* GPIOs for Camera reset/power */
-	cam_front_default: cam-front-default-state {
-		pins = "gpio8";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-disable;
-
-		reset-pins {
-			pins = "gpio9";
-			function = "gpio";
-			drive-strength = <2>;
-			input-enable;
-		};
-	};
-
-	cam_rear_default: cam-rear-default-state {
-		reset-pins {
-			pins = "gpio30";
-			function = "gpio";
-			drive-strength = <2>;
-			bias-disable;
-		};
-	};
-
-	/* GPIOs for Camera MCLKs */
-	cam_mclk_default: cam-default-state {
-		mclk0-pins {
-			pins = "gpio13";
-			function = "cam_mclk";
-			drive-strength = <2>;
-			bias-disable;
-		};
-
-		mclk1-pins {
-			pins = "gpio14";
-			function = "cam_mclk";
-			drive-strength = <2>;
-			bias-disable;
-		};
-
-		mclk2-pins {
-			pins = "gpio15";
-			function = "cam_mclk";
-			drive-strength = <2>;
-			bias-disable;
-		};
-
-		mclk4-pins {
-			pins = "gpio16";
-			function = "cam_mclk";
-			drive-strength = <2>;
-			bias-disable;
-		};
 	};
 
 	/* GPIOs for Audio Codec */
@@ -1067,10 +1267,92 @@
 		pins = "gpio95", "gpio96";
 		function = "gpio";
 		drive-strength = <2>;
-		bias-pull-down;
-		output-disable;
 	};
 
+	/* GPIOs for Camera reset/power */
+	cam_front_default: cam-front-default-state {
+		pins = "gpio8";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+
+		reset-pins {
+			pins = "gpio9";
+			function = "gpio";
+			drive-strength = <2>;
+			input-enable;
+		};
+	};
+
+	cam_rear_tele_default: cam-rear-tele-default-state {
+		reset-pins {
+			pins = "gpio23";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	cam_rear_uw_default: cam-rear-uw-default-state {
+		reset-pins {
+			pins = "gpio24";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	cam_rear_main_default: cam-rear-main-default-state {
+		reset-pins {
+			pins = "gpio30";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	/* GPIOs for Camera MCLKs */
+	cam_mclk_default: cam-default-state {
+		// Main (IMX586)
+		mclk0-pins {
+			pins = "gpio13";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		// Telephoto (S5K3M5)
+		mclk1-pins {
+			pins = "gpio14";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		// Front (S5K3T1SP)
+		mclk2-pins {
+			pins = "gpio15";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		// Ultrawide (S5K3P9)
+		mclk3-pins {
+			pins = "gpio16";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	/* MicroSD card-detect */
+	sdcard_default: sdc2-cd {
+		pins = "gpio126";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
 };
 
 /* USB: Only USB2.0 because Xiaomi are cheapskates */
@@ -1081,9 +1363,13 @@
 
 &usb_1_dwc3 {
 	dr_mode = "peripheral";
+	extcon = <&extcon_usb>;
 	phys = <&usb_1_hsphy>;
 	phy-names = "usb2-phy";
 	maximum-speed = "high-speed";
+
+	/delete-property/ snps,dis_u2_susphy_quirk;
+	/delete-property/ snps,dis_enblslpm_quirk;
 };
 
 &usb_1_hsphy {
@@ -1119,10 +1405,10 @@
 
 &gpu {
 	status = "okay";
-    
-	zap-shader {
-		firmware-name = "qcom/sdm710/pyxis/a615_zap.mbn";
-	};
+};
+
+&gpu_zap_shader {
+	firmware-name = "qcom/sdm710/pyxis/a615_zap.mbn";
 };
 
 &venus {
