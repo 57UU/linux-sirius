@@ -807,6 +807,7 @@
 
 		clocks = <&camcc CAM_CC_MCLK2_CLK>;
 
+		/* Set 19.2 MHz for compatibility with Linux driver */
 		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;
 		assigned-clock-rates = <19200000>;
 
