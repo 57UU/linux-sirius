@@ -38,7 +38,7 @@ struct lmh_hw_data {
 
 struct lmh_soc_data {
 	bool enable_algos;
-	u32 node_ids[8];
+	unsigned int clus1_start_idx;
 };
 
 static irqreturn_t lmh_handle_irq(int hw_irq, void *data)
@@ -124,6 +124,11 @@ static int lmh_probe(struct platform_device *pdev)
 	cpu_id = of_cpu_node_to_id(cpu_node);
 	of_node_put(cpu_node);
 
+	if (cpu_id < 0) {
+		dev_err(dev, "Wrong CPU id associated with LMh node\n");
+		return -EINVAL;
+	}
+
 	ret = of_property_read_u32(np, "qcom,lmh-temp-high-millicelsius", &temp_high);
 	if (ret) {
 		dev_err(dev, "missing qcom,lmh-temp-high-millicelsius property\n");
@@ -142,17 +147,11 @@ static int lmh_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	/*
-	 * Only sdm845 has lmh hardware currently enabled from hlos. If this is needed
-	 * for other platforms, revisit this to check if the <cpu-id, node-id> should be part
-	 * of a dt match table.
-	 */
 	match_data = of_device_get_match_data(dev);
-	if (cpu_id >= 0 && cpu_id < 8) {
-		node_id = match_data->node_ids[cpu_id];
+	if (cpu_id < match_data->clus1_start_idx) {
+		node_id = LMH_CLUSTER0_NODE_ID;
 	} else {
-		dev_err(dev, "Wrong CPU id associated with LMh node\n");
-		return -EINVAL;
+		node_id = LMH_CLUSTER1_NODE_ID;
 	}
 
 	if (!qcom_scm_lmh_dcvsh_available())
@@ -233,44 +232,17 @@ static int lmh_probe(struct platform_device *pdev)
 
 static const struct lmh_soc_data sdm670_lmh_data = {
 	.enable_algos = true,
-	.node_ids = {
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-	},
+	.clus1_start_idx = 6,
 };
 
 static const struct lmh_soc_data sdm845_lmh_data = {
 	.enable_algos = true,
-	.node_ids = {
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-	},
+	.clus1_start_idx = 4,
 };
 
 static const struct lmh_soc_data sm8150_lmh_data = {
 	.enable_algos = false,
-	.node_ids = {
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER0_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-		LMH_CLUSTER1_NODE_ID,
-	},
+	.clus1_start_idx = 4,
 };
 
 static const struct of_device_id lmh_table[] = {
