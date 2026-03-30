@@ -1830,6 +1830,8 @@ struct q6afe_port *q6afe_port_get_from_id(struct device *dev, int id)
 	case AFE_PORT_ID_QUATERNARY_MI2S_TX:
 	case AFE_PORT_ID_QUINARY_MI2S_RX:
 	case AFE_PORT_ID_QUINARY_MI2S_TX:
+	case AFE_PORT_ID_SENARY_MI2S_RX:
+	case AFE_PORT_ID_SENARY_MI2S_TX:
 	case AFE_PORT_ID_INT0_MI2S_RX:
 	case AFE_PORT_ID_INT0_MI2S_TX:
 	case AFE_PORT_ID_INT1_MI2S_RX:
