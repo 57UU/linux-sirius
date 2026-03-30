@@ -402,8 +402,6 @@ static int q6apm_dai_open(struct snd_soc_component *component,
 	else
 		prtd->phys = substream->dma_buffer.addr | (pdata->sid << 32);
 
-	q6apm_set_memory_map_handle(prtd->graph, substream->stream);
-
 	return 0;
 err:
 	kfree(prtd);
@@ -509,6 +507,7 @@ static int q6apm_dai_pcm_new(struct snd_soc_component *component, struct snd_soc
 	if (ret)
 		return ret;
 
+	/* Note: DSP backend dais are uni-directional ONLY(either playback or capture) */
 	if (pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream) {
 		substream = pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream;
 		ret = q6apm_dai_memory_map(component, substream, graph_id);
@@ -518,7 +517,7 @@ static int q6apm_dai_pcm_new(struct snd_soc_component *component, struct snd_soc
 
 	if (pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream) {
 		substream = pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream;
-		q6apm_dai_memory_map(component, substream, graph_id);
+		ret = q6apm_dai_memory_map(component, substream, graph_id);
 		if (ret)
 			return ret;
 	}
@@ -526,23 +525,36 @@ static int q6apm_dai_pcm_new(struct snd_soc_component *component, struct snd_soc
 	return 0;
 }
 
-static void q6apm_dai_pcm_destruct(struct snd_soc_component *component, struct snd_pcm *pcm)
+static void q6apm_dai_memory_unmap(struct snd_soc_component *component,
+				   struct snd_pcm_substream *substream)
 {
-	struct snd_pcm_substream *substream;
 	struct snd_soc_pcm_runtime *soc_prtd;
 	struct snd_soc_dai *cpu_dai;
 	int graph_id;
 
-	if (pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream)
-		substream = pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream;
-	else
-		substream = pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream;
-
 	soc_prtd = snd_soc_substream_to_rtd(substream);
+	if (!soc_prtd)
+		return;
+
 	cpu_dai = snd_soc_rtd_to_cpu(soc_prtd, 0);
+	if (!cpu_dai)
+		return;
 
 	graph_id = cpu_dai->driver->id;
 	q6apm_unmap_memory_fixed_region(component->dev, graph_id);
+}
+
+static void q6apm_dai_pcm_free(struct snd_soc_component *component, struct snd_pcm *pcm)
+{
+	struct snd_pcm_substream *substream;
+
+	substream = pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream;
+	if (substream)
+		q6apm_dai_memory_unmap(component, substream);
+
+	substream = pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream;
+	if (substream)
+		q6apm_dai_memory_unmap(component, substream);
 }
 
 static int q6apm_dai_compr_open(struct snd_soc_component *component,
@@ -906,7 +918,7 @@ static const struct snd_soc_component_driver q6apm_fe_dai_component = {
 	.close		= q6apm_dai_close,
 	.prepare	= q6apm_dai_prepare,
 	.pcm_new	= q6apm_dai_pcm_new,
-	.pcm_destruct	= q6apm_dai_pcm_destruct,
+	.pcm_free	= q6apm_dai_pcm_free,
 	.hw_params	= q6apm_dai_hw_params,
 	.pointer	= q6apm_dai_pointer,
 	.trigger	= q6apm_dai_trigger,

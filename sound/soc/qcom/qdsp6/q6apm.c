@@ -200,15 +200,6 @@ int q6apm_graph_media_format_shmem(struct q6apm_graph *graph,
 }
 EXPORT_SYMBOL_GPL(q6apm_graph_media_format_shmem);
 
-void q6apm_set_memory_map_handle(struct q6apm_graph *graph, unsigned int dir)
-{
-	if (dir == SNDRV_PCM_STREAM_PLAYBACK)
-		graph->rx_data.mem_map_handle = graph->info->mem_map_handle;
-	else
-		graph->tx_data.mem_map_handle = graph->info->mem_map_handle;
-}
-EXPORT_SYMBOL_GPL(q6apm_set_memory_map_handle);
-
 int q6apm_map_memory_fixed_region(struct device *dev, unsigned int graph_id, phys_addr_t phys,
 				  size_t sz)
 {
@@ -227,6 +218,9 @@ int q6apm_map_memory_fixed_region(struct device *dev, unsigned int graph_id, phy
 	info = idr_find(&apm->graph_info_idr, graph_id);
 	if (!info)
 		return -ENODEV;
+
+	if (info->mem_map_handle)
+		return 0;
 
 	/* DSP expects size should be aligned to 4K */
 	buf_sz = ALIGN(sz, 4096);
@@ -324,16 +318,6 @@ EXPORT_SYMBOL_GPL(q6apm_unmap_memory_fixed_region);
 
 int q6apm_free_fragments(struct q6apm_graph *graph, unsigned int dir)
 {
-	struct audioreach_graph_data *data;
-
-	if (dir == SNDRV_PCM_STREAM_PLAYBACK)
-		data = &graph->rx_data;
-	else
-		data = &graph->tx_data;
-
-	if (!data->mem_map_handle)
-		return 0;
-
 	audioreach_graph_free_buf(graph);
 
 	return 0;
@@ -480,7 +464,7 @@ int q6apm_write_async(struct q6apm_graph *graph, uint32_t len, uint32_t msw_ts,
 	write_buffer->buf_size = len;
 	write_buffer->timestamp_lsw = lsw_ts;
 	write_buffer->timestamp_msw = msw_ts;
-	write_buffer->mem_map_handle = graph->rx_data.mem_map_handle;
+	write_buffer->mem_map_handle = graph->info->mem_map_handle;
 	write_buffer->flags = wflags;
 
 	graph->rx_data.dsp_buf++;
@@ -514,7 +498,7 @@ int q6apm_read(struct q6apm_graph *graph)
 
 	read_buffer->buf_addr_lsw = lower_32_bits(ab->phys);
 	read_buffer->buf_addr_msw = upper_32_bits(ab->phys);
-	read_buffer->mem_map_handle = port->mem_map_handle;
+	read_buffer->mem_map_handle = graph->info->mem_map_handle;
 	read_buffer->buf_size = ab->size;
 
 	port->dsp_buf++;

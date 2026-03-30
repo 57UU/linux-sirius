@@ -78,7 +78,6 @@ struct audioreach_graph_data {
 	struct audio_buffer *buf;
 	uint32_t num_periods;
 	uint32_t dsp_buf;
-	uint32_t mem_map_handle;
 	atomic_t hw_ptr;
 };
 
@@ -137,8 +136,6 @@ int q6apm_write_async(struct q6apm_graph *graph, uint32_t len, uint32_t msw_ts,
 int q6apm_map_memory_fixed_region(struct device *dev,
 			     unsigned int graph_id, phys_addr_t phys,
 			     size_t sz);
-void q6apm_set_memory_map_handle(struct q6apm_graph *graph,
-			     unsigned int dir);
 int q6apm_alloc_fragments(struct q6apm_graph *graph,
 			unsigned int dir, phys_addr_t phys,
 			size_t period_sz, unsigned int periods);
