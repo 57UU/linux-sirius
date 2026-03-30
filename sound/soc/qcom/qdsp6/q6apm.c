@@ -787,7 +787,11 @@ static int apm_probe(gpr_device_t *gdev)
 		return ret;
 	}
 
-	return devm_of_platform_populate(dev);
+	ret = of_platform_populate(dev->of_node, NULL, NULL, dev);
+	if (ret)
+		snd_soc_unregister_component(dev);
+
+	return ret;
 }
 
 static void apm_remove(gpr_device_t *gdev)
