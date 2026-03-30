@@ -148,11 +148,10 @@ static int lmh_probe(struct platform_device *pdev)
 	}
 
 	match_data = of_device_get_match_data(dev);
-	if (cpu_id < match_data->clus1_start_idx) {
+	if (cpu_id < match_data->clus1_start_idx)
 		node_id = LMH_CLUSTER0_NODE_ID;
-	} else {
+	else
 		node_id = LMH_CLUSTER1_NODE_ID;
-	}
 
 	if (!qcom_scm_lmh_dcvsh_available())
 		return -EINVAL;
