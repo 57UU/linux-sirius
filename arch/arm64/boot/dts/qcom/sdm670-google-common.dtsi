@@ -807,7 +807,10 @@
 
 		clocks = <&camcc CAM_CC_MCLK2_CLK>;
 
-		/* Set 19.2 MHz for compatibility with Linux driver */
+		/*
+		 * The sensor can accept a 24 MHz clock, but 19.2 MHz has
+		 * better driver compatibility.
+		 */
 		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;
 		assigned-clock-rates = <19200000>;
 
