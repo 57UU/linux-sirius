@@ -24,6 +24,8 @@
 
 static const char *const lc898219xi_supply_names[] = {
 	"vdd",
+	"vio",
+	"vana",
 };
 
 struct lc898219xi {
@@ -160,7 +162,7 @@ static int __maybe_unused lc898219xi_runtime_resume(struct device *dev)
 	uint16_t init_temp = i2c_smbus_read_word_swapped(client, 0x58);
 	uint16_t init_temp_A;
 	uint16_t init_temp_B;
-	
+
 	if ( ((EEPROM_3Fh & 0x38) >> 3) == 2)
 		init_temp_A = init_temp << 2;
 	else if ( ((EEPROM_3Fh & 0x38) >> 3) == 1)
@@ -192,7 +194,7 @@ static int __maybe_unused lc898219xi_runtime_resume(struct device *dev)
 		usleep_range(1000, 1010);
 	}
 
-	
+
 	/* Write Init Temperature Data */
 	i2c_smbus_write_word_swapped(client, 0x30, init_temp_A);
 	i2c_smbus_write_word_swapped(client, 0x32, init_temp_A);
@@ -200,7 +202,7 @@ static int __maybe_unused lc898219xi_runtime_resume(struct device *dev)
 	i2c_smbus_write_word_swapped(client, 0x78, init_temp_B);
 
 	i2c_smbus_write_byte_data(client, 0x8C, 0xE9);
-	
+
 	return ret;
 }
 
@@ -208,69 +210,6 @@ static int lc898219xi_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct lc898219xi *lc898219xi =
 		container_of(ctrl->handler, struct lc898219xi, ctrls);
-	struct device *dev = lc898219xi->sd.dev;
-	struct i2c_client *client = v4l2_get_subdevdata(&lc898219xi->sd);
-	unsigned short addr_bak = client->addr;
-	client->addr = 0x73;
-	uint32_t EEPROM_3Fh = i2c_smbus_read_byte_data(client, 0x3F);
-	client->addr = addr_bak;
-	uint32_t regdata = i2c_smbus_read_byte_data(client, 0xF0);
-	if (regdata == 0xA5) {
-		dev_info(dev, "check communication success\n");
-	} else {
-		dev_err(dev, "check communication error regdata: %x \n", regdata);
-		// return -1;
-	}
-	usleep_range(1000, 1010);
-	i2c_smbus_write_byte_data(client, 0x8E, 0x15);
-	i2c_smbus_write_byte_data(client, 0x8D, 0x20);
-
-	i2c_smbus_write_byte_data(client, 0x81, 0x80);
-	usleep_range(1000, 1010);
-
-	uint16_t init_temp = i2c_smbus_read_word_swapped(client, 0x58);
-	uint16_t init_temp_A;
-	uint16_t init_temp_B;
-	
-	if ( ((EEPROM_3Fh & 0x38) >> 3) == 2)
-		init_temp_A = init_temp << 2;
-	else if ( ((EEPROM_3Fh & 0x38) >> 3) == 1)
-		init_temp_A = init_temp << 1;
-	else
-		init_temp_A = init_temp;
-
-	if ( (EEPROM_3Fh & 0x07) == 2)
-		init_temp_B = init_temp << 2;
-	else if ( (EEPROM_3Fh & 0x07) == 1)
-		init_temp_B = init_temp << 1;
-	else
-		init_temp_B = init_temp;
-
-	i2c_smbus_write_byte_data(client, 0xE0, 0x01);
-	msleep(8);
-
-	int retry;
-	for (retry = 0; retry < 10; retry++) {
-		uint32_t check = i2c_smbus_read_byte_data(client, 0xB3);
-		if ( (check & 0XE0) == 0 ) {
-			break;
-		} else {
-			if (retry >= 9) {
-				dev_err(dev, "LSI wake up check failed");
-				// return -1;
-			}
-		}
-		usleep_range(1000, 1010);
-	}
-
-	
-	/* Write Init Temperature Data */
-	i2c_smbus_write_word_swapped(client, 0x30, init_temp_A);
-	i2c_smbus_write_word_swapped(client, 0x32, init_temp_A);
-	i2c_smbus_write_word_swapped(client, 0x76, init_temp_B);
-	i2c_smbus_write_word_swapped(client, 0x78, init_temp_B);
-
-	i2c_smbus_write_byte_data(client, 0x8C, 0xE9);
 
 	if (ctrl->id == V4L2_CID_FOCUS_ABSOLUTE)
 		return lc898219xi_set_dac(lc898219xi, ctrl->val);

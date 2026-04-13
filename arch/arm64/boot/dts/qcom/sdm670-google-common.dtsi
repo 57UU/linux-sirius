@@ -819,6 +819,8 @@
 		compatible = "onnn,lc898219xi";
 		reg = <0x72>;
 		vdd-supply = <&cam_rear_vcc_vdd>;
+		vana-supply = <&cam_rear_vana_ldo>;
+		vio-supply = <&cam_vio_ldo>;
 	};
 };
 
