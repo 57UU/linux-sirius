@@ -1873,6 +1873,18 @@
 				function = "qup12";
 			};
 
+			qup_uart12_default: qup-uart12-default-state {
+				qup_uart12_tx: tx-pins {
+					pins = "gpio51";
+					function = "qup12";
+				};
+
+				qup_uart12_rx: rx-pins {
+					pins = "gpio52";
+					function = "qup12";
+				};
+			};
+
 			qup_i2c13_default: qup-i2c13-default-state {
 				pins = "gpio105", "gpio106";
 				function = "qup13";
