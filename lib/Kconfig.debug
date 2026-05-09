@@ -2261,6 +2261,13 @@ config KCOV_SELFTEST
 	  On test failure, causes the kernel to panic. Recommended to be
 	  enabled, ensuring critical functionality works as intended.
 
+config DEBUG_AID_FOR_SYZBOT
+       bool "Additional debug code for syzbot"
+       default n
+       select PREEMPT_RT if EXPERT && ARCH_SUPPORTS_RT && !COMPILE_TEST
+       help
+         This option is intended for testing by syzbot.
+
 menuconfig RUNTIME_TESTING_MENU
 	bool "Runtime Testing"
 	default y
@@ -2403,6 +2410,16 @@ config FPROBE_SANITY_TEST
 	  This option will enable testing the fprobe when the system boot.
 	  A series of tests are made to verify that the fprobe is functioning
 	  properly.
+
+	  Say N if you are unsure.
+
+config BARRIER_TIMEOUT_TEST
+	tristate "KUnit tests for smp_cond_load_relaxed_timeout()"
+	depends on KUNIT
+	default KUNIT_ALL_TESTS
+	help
+	  Builds KUnit tests that validate wake-up and timeout handling paths
+	  in smp_cond_load_relaxed_timeout().
 
 	  Say N if you are unsure.
 
@@ -3070,7 +3087,7 @@ config FORTIFY_KUNIT_TEST
 config LONGEST_SYM_KUNIT_TEST
 	tristate "Test the longest symbol possible" if !KUNIT_ALL_TESTS
 	depends on KUNIT && KPROBES
-	depends on !PREFIX_SYMBOLS && !CFI && !GCOV_KERNEL
+	depends on !CALL_PADDING && !CFI && !GCOV_KERNEL
 	default KUNIT_ALL_TESTS
 	help
 	  Tests the longest symbol possible

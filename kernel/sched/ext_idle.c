@@ -9,7 +9,6 @@
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  * Copyright (c) 2024 Andrea Righi <arighi@nvidia.com>
  */
-#include "ext_idle.h"
 
 /* Enable/disable built-in idle CPU selection policy */
 static DEFINE_STATIC_KEY_FALSE(scx_builtin_idle_enabled);
@@ -466,12 +465,6 @@ s32 scx_select_cpu_dfl(struct task_struct *p, s32 prev_cpu, u64 wake_flags,
 	preempt_disable();
 
 	/*
-	 * Check whether @prev_cpu is still within the allowed set. If not,
-	 * we can still try selecting a nearby CPU.
-	 */
-	is_prev_allowed = cpumask_test_cpu(prev_cpu, allowed);
-
-	/*
 	 * Determine the subset of CPUs usable by @p within @cpus_allowed.
 	 */
 	if (allowed != p->cpus_ptr) {
@@ -486,6 +479,12 @@ s32 scx_select_cpu_dfl(struct task_struct *p, s32 prev_cpu, u64 wake_flags,
 			goto out_enable;
 		}
 	}
+
+	/*
+	 * Check whether @prev_cpu is still within the allowed set. If not,
+	 * we can still try selecting a nearby CPU.
+	 */
+	is_prev_allowed = cpumask_test_cpu(prev_cpu, allowed);
 
 	/*
 	 * This is necessary to protect llc_cpus.
@@ -789,7 +788,7 @@ void __scx_update_idle(struct rq *rq, bool idle, bool do_notify)
 	 */
 	if (SCX_HAS_OP(sch, update_idle) && do_notify &&
 	    !scx_bypassing(sch, cpu_of(rq)))
-		SCX_CALL_OP(sch, update_idle, rq, cpu_of(rq), idle);
+		SCX_CALL_OP(sch, update_idle, rq, scx_cpu_arg(cpu_of(rq)), idle);
 }
 
 static void reset_idle_masks(struct sched_ext_ops *ops)
@@ -917,7 +916,7 @@ static s32 select_cpu_from_kfunc(struct scx_sched *sch, struct task_struct *p,
 	bool we_locked = false;
 	s32 cpu;
 
-	if (!ops_cpu_valid(sch, prev_cpu, NULL))
+	if (!scx_cpu_valid(sch, prev_cpu, NULL))
 		return -EINVAL;
 
 	if (!check_builtin_idle_enabled(sch))
@@ -927,14 +926,24 @@ static s32 select_cpu_from_kfunc(struct scx_sched *sch, struct task_struct *p,
 	 * Accessing p->cpus_ptr / p->nr_cpus_allowed needs either @p's rq
 	 * lock or @p's pi_lock. Three cases:
 	 *
-	 *  - inside ops.select_cpu(): try_to_wake_up() holds @p's pi_lock.
+	 *  - inside ops.select_cpu(): try_to_wake_up() holds the wake-up
+	 *    task's pi_lock; the wake-up task is recorded in kf_tasks[0]
+	 *    by SCX_CALL_OP_TASK_RET().
 	 *  - other rq-locked SCX op: scx_locked_rq() points at the held rq.
 	 *  - truly unlocked (UNLOCKED ops, SYSCALL, non-SCX struct_ops):
 	 *    nothing held, take pi_lock ourselves.
+	 *
+	 * In the first two cases, BPF schedulers may pass an arbitrary task
+	 * that the held lock doesn't cover. Refuse those.
 	 */
 	if (this_rq()->scx.in_select_cpu) {
+		if (!scx_kf_arg_task_ok(sch, p))
+			return -EINVAL;
 		lockdep_assert_held(&p->pi_lock);
-	} else if (!scx_locked_rq()) {
+	} else if (scx_locked_rq()) {
+		if (task_rq(p) != scx_locked_rq())
+			goto cross_task;
+	} else {
 		raw_spin_lock_irqsave(&p->pi_lock, irq_flags);
 		we_locked = true;
 	}
@@ -960,6 +969,11 @@ static s32 select_cpu_from_kfunc(struct scx_sched *sch, struct task_struct *p,
 		raw_spin_unlock_irqrestore(&p->pi_lock, irq_flags);
 
 	return cpu;
+
+cross_task:
+	scx_error(sch, "select_cpu kfunc called cross-task on %s[%d]",
+		  p->comm, p->pid);
+	return -EINVAL;
 }
 
 /**
@@ -975,7 +989,7 @@ __bpf_kfunc s32 scx_bpf_cpu_node(s32 cpu, const struct bpf_prog_aux *aux)
 	guard(rcu)();
 
 	sch = scx_prog_sched(aux);
-	if (unlikely(!sch) || !ops_cpu_valid(sch, cpu, NULL))
+	if (unlikely(!sch) || !scx_cpu_valid(sch, cpu, NULL))
 		return NUMA_NO_NODE;
 	return cpu_to_node(cpu);
 }
@@ -1257,7 +1271,7 @@ __bpf_kfunc bool scx_bpf_test_and_clear_cpu_idle(s32 cpu, const struct bpf_prog_
 	if (!check_builtin_idle_enabled(sch))
 		return false;
 
-	if (!ops_cpu_valid(sch, cpu, NULL))
+	if (!scx_cpu_valid(sch, cpu, NULL))
 		return false;
 
 	return scx_idle_test_and_clear_cpu(cpu);
@@ -1467,6 +1481,7 @@ BTF_KFUNCS_END(scx_kfunc_ids_idle)
 static const struct btf_kfunc_id_set scx_kfunc_set_idle = {
 	.owner			= THIS_MODULE,
 	.set			= &scx_kfunc_ids_idle,
+	.filter			= scx_kfunc_context_filter,
 };
 
 /*
