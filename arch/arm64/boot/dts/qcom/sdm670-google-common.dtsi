@@ -14,6 +14,7 @@
 #include "sdm670.dtsi"
 #include "pm660.dtsi"
 #include "pm660l.dtsi"
+#include "sdm670-google-common-dtbo-mask.dtsi"
 
 /delete-node/ &mpss_region;
 /delete-node/ &venus_mem;
@@ -124,6 +125,55 @@
 		debug_info_mem: debug-info@a1800000 {
 			reg = <0 0xa1800000 0 0x411000>;
 			no-map;
+		};
+	};
+
+	thermal-zones {
+		xo-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <1000>;
+
+			thermal-sensors = <&pm660_adc_tm 0>;
+
+			cooling-maps {
+				map0 {
+					trip = <&xo_alert0>;
+					cooling-device = <&cpu6 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu7 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+
+				};
+
+				map1 {
+					trip = <&xo_alert1>;
+					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu3 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu4 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu5 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+
+				};
+			};
+
+			trips {
+				xo_alert0: trip-point0 {
+					temperature = <47000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+
+				xo_alert1: trip-point1 {
+					temperature = <52000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+
+				xo_crit: trip-point2 {
+					temperature = <59000>;
+					hysteresis = <1000>;
+					type = "critical";
+				};
+			};
 		};
 	};
 
@@ -566,6 +616,18 @@
 
 &mdss_mdp {
 	status = "okay";
+};
+
+&pm660_adc_tm {
+	status = "okay";
+
+	xo-therm@0 {
+		reg = <0>;
+		io-channels = <&pm660_adc ADC5_XO_THERM_100K_PU>;
+		qcom,hw-settle-time-us = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,ratiometric;
+	};
 };
 
 &pm660_charger {
