@@ -118,7 +118,7 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
 		codec_dai_fmt |= SND_SOC_DAIFMT_IB_IF | SND_SOC_DAIFMT_DSP_B;
 		snd_soc_dai_set_sysclk(cpu_dai,
 			Q6AFE_LPASS_CLK_ID_PRI_TDM_IBIT,
-			TDM_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
+			TDM_BCLK_RATE, SNDRV_PCM_STREAM_CAPTURE);
 		snd_soc_dai_set_fmt(cpu_dai, fmt);
 		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
 
@@ -127,7 +127,7 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
 				    TDM_BCLK_RATE * 2);
 		snd_soc_dai_set_sysclk(codec_dai, 1,
 				       TDM_BCLK_RATE * 2,
-				       SNDRV_PCM_STREAM_PLAYBACK);
+				       SNDRV_PCM_STREAM_CAPTURE);
 
 		break;
 	case SECONDARY_TDM_RX_0:
