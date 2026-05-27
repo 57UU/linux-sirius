@@ -18,7 +18,7 @@ properties:
       - items:
           - enum:
               - qcom,pm660l-wcd-analog-codec
-          - const: qcom,pm8916-wcd-analog-codec
+          - const: qcom,pm8953-wcd-analog-codec
 
       - enum:
           - qcom,pm8916-wcd-analog-codec
