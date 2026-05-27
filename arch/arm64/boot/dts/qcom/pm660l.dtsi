@@ -89,7 +89,7 @@
 
 		pm660l_codec: audio-codec@f000 {
 			compatible = "qcom,pm660l-wcd-analog-codec",
-				     "qcom,pm8916-wcd-analog-codec";
+				     "qcom,pm8953-wcd-analog-codec";
 			reg = <0xf000>;
 			interrupts = <0x3 0xf0 0x0 IRQ_TYPE_NONE>,
 				     <0x3 0xf0 0x1 IRQ_TYPE_NONE>,
