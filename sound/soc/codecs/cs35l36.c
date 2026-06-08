@@ -442,8 +442,8 @@ static bool cs35l36_volatile_reg(struct device *dev, unsigned int reg)
 	}
 }
 
-static const DECLARE_TLV_DB_RANGE(dig_vol_tlv, 0, 912,
-				  TLV_DB_MINMAX_ITEM(-10200, 1200));
+static const DECLARE_TLV_DB_RANGE(dig_vol_tlv, 0, 816,
+				  TLV_DB_MINMAX_ITEM(-10200, 0));
 static DECLARE_TLV_DB_SCALE(amp_gain_tlv, 0, 1, 1);
 
 static const char * const cs35l36_pcm_sftramp_text[] =  {
@@ -483,7 +483,7 @@ static int cs35l36_ldm_sel_put(struct snd_kcontrol *kcontrol,
 
 static const struct snd_kcontrol_new cs35l36_aud_controls[] = {
 	SOC_SINGLE_SX_TLV("Digital PCM Volume", CS35L36_AMP_DIG_VOL_CTRL,
-		3, 0x4D0, 0x390, dig_vol_tlv),
+		3, 0x4D0, 0x330, dig_vol_tlv),
 	SOC_SINGLE_TLV("Analog PCM Volume", CS35L36_AMP_GAIN_CTRL, 5, 0x13, 0,
 		amp_gain_tlv),
 	SOC_ENUM("PCM Soft Ramp", pcm_sft_ramp),
