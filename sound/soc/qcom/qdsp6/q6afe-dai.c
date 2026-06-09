@@ -413,7 +413,8 @@ static int q6afe_dai_prepare(struct snd_pcm_substream *substream,
 	case SENARY_MI2S_RX ... SENARY_MI2S_TX:
 	case QUINARY_MI2S_RX ... QUINARY_MI2S_TX:
 	case PRIMARY_MI2S_RX ... QUATERNARY_MI2S_TX:
-	case INT0_MI2S_RX ... INT6_MI2S_TX:
+	case LPI_MI2S_RX_0 ... LPI_MI2S_TX_4:
+	case LPI_MI2S_RX_5 ... LPI_MI2S_TX_6:
 		rc = q6afe_i2s_port_prepare(dai_data->port[dai->id],
 			       &dai_data->port_config[dai->id].i2s_cfg);
 		if (rc < 0) {
@@ -668,20 +669,20 @@ static const struct snd_soc_dapm_route q6afe_dapm_routes[] = {
 	/* USB playback AFE port receives data for playback, hence use the RX port */
 	{"USB Playback", NULL, "USB_RX"},
 
-	{"INT0 MI2S Playback", NULL, "INT0_MI2S_RX"},
-	{"INT0_MI2S_TX", NULL, "INT0 MI2S Capture"},
-	{"INT1 MI2S Playback", NULL, "INT1_MI2S_RX"},
-	{"INT1_MI2S_TX", NULL, "INT1 MI2S Capture"},
-	{"INT2 MI2S Playback", NULL, "INT2_MI2S_RX"},
-	{"INT2_MI2S_TX", NULL, "INT2 MI2S Capture"},
-	{"INT3 MI2S Playback", NULL, "INT3_MI2S_RX"},
-	{"INT3_MI2S_TX", NULL, "INT3 MI2S Capture"},
-	{"INT4 MI2S Playback", NULL, "INT4_MI2S_RX"},
-	{"INT4_MI2S_TX", NULL, "INT4 MI2S Capture"},
-	{"INT5 MI2S Playback", NULL, "INT5_MI2S_RX"},
-	{"INT5_MI2S_TX", NULL, "INT5 MI2S Capture"},
-	{"INT6 MI2S Playback", NULL, "INT6_MI2S_RX"},
-	{"INT6_MI2S_TX", NULL, "INT6 MI2S Capture"},
+	{"LPI RX0 MI2S Playback", NULL, "LPI_MI2S_RX_0"},
+	{"LPI_MI2S_TX_0", NULL, "LPI TX0 MI2S Capture"},
+	{"LPI RX1 MI2S Playback", NULL, "LPI_MI2S_RX_1"},
+	{"LPI_MI2S_TX_1", NULL, "LPI TX1 MI2S Capture"},
+	{"LPI RX2 MI2S Playback", NULL, "LPI_MI2S_RX_2"},
+	{"LPI_MI2S_TX_2", NULL, "LPI TX2 MI2S Capture"},
+	{"LPI RX3 MI2S Playback", NULL, "LPI_MI2S_RX_3"},
+	{"LPI_MI2S_TX_3", NULL, "LPI TX3 MI2S Capture"},
+	{"LPI RX4 MI2S Playback", NULL, "LPI_MI2S_RX_4"},
+	{"LPI_MI2S_TX_4", NULL, "LPI TX4 MI2S Capture"},
+	{"LPI RX5 MI2S Playback", NULL, "LPI_MI2S_RX_5"},
+	{"LPI_MI2S_TX_5", NULL, "LPI TX5 MI2S Capture"},
+	{"LPI RX6 MI2S Playback", NULL, "LPI_MI2S_RX_6"},
+	{"LPI_MI2S_TX_6", NULL, "LPI TX6 MI2S Capture"},
 };
 
 static int msm_dai_q6_dai_probe(struct snd_soc_dai *dai)
@@ -1029,33 +1030,33 @@ static const struct snd_soc_dapm_widget q6afe_dai_widgets[] = {
 
 	SND_SOC_DAPM_AIF_IN("USB_RX", NULL, 0, SND_SOC_NOPM, 0, 0),
 
-	SND_SOC_DAPM_AIF_IN("INT0_MI2S_RX", NULL,
+	SND_SOC_DAPM_AIF_IN("LPI_MI2S_RX_0", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("INT0_MI2S_TX", NULL,
+	SND_SOC_DAPM_AIF_OUT("LPI_MI2S_TX_0", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_IN("INT1_MI2S_RX", NULL,
+	SND_SOC_DAPM_AIF_IN("LPI_MI2S_RX_1", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("INT1_MI2S_TX", NULL,
+	SND_SOC_DAPM_AIF_OUT("LPI_MI2S_TX_1", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_IN("INT2_MI2S_RX", NULL,
+	SND_SOC_DAPM_AIF_IN("LPI_MI2S_RX_2", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("INT2_MI2S_TX", NULL,
+	SND_SOC_DAPM_AIF_OUT("LPI_MI2S_TX_2", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_IN("INT3_MI2S_RX", NULL,
+	SND_SOC_DAPM_AIF_IN("LPI_MI2S_RX_3", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("INT3_MI2S_TX", NULL,
+	SND_SOC_DAPM_AIF_OUT("LPI_MI2S_TX_3", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_IN("INT4_MI2S_RX", NULL,
+	SND_SOC_DAPM_AIF_IN("LPI_MI2S_RX_4", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("INT4_MI2S_TX", NULL,
+	SND_SOC_DAPM_AIF_OUT("LPI_MI2S_TX_4", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_IN("INT5_MI2S_RX", NULL,
+	SND_SOC_DAPM_AIF_IN("LPI_MI2S_RX_5", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("INT5_MI2S_TX", NULL,
+	SND_SOC_DAPM_AIF_OUT("LPI_MI2S_TX_5", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_IN("INT6_MI2S_RX", NULL,
+	SND_SOC_DAPM_AIF_IN("LPI_MI2S_RX_6", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("INT6_MI2S_TX", NULL,
+	SND_SOC_DAPM_AIF_OUT("LPI_MI2S_TX_6", "NULL",
 		0, SND_SOC_NOPM, 0, 0),
 };
 
@@ -1091,7 +1092,8 @@ static void of_q6afe_parse_dai_data(struct device *dev,
 		case SENARY_MI2S_RX ... SENARY_MI2S_TX:
 		case QUINARY_MI2S_RX ... QUINARY_MI2S_TX:
 		case PRIMARY_MI2S_RX ... QUATERNARY_MI2S_TX:
-		case INT0_MI2S_RX ... INT6_MI2S_TX:
+		case LPI_MI2S_RX_0 ... LPI_MI2S_TX_4:
+		case LPI_MI2S_RX_5 ... LPI_MI2S_TX_6:
 			priv = &data->priv[id];
 			ret = of_property_read_variable_u32_array(node,
 							"qcom,sd-lines",
