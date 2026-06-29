@@ -497,6 +497,20 @@
 		pinctrl-0 = <&cam_rear_ldo_pin>;
 	};
 
+	cam_rear_vcc_vdd: cam-rear-vcc-vdd-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "actuator_regulator";
+		regulator-min-microvolt = <2850000>;
+		regulator-max-microvolt = <2850000>;
+		regulator-enable-ramp-delay = <100>;
+
+		gpio = <&pm660l_gpios 2 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_rear_rcm_pin>;
+	};
+
 	cam_vio_ldo: cam-vio-ldo-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "cam_vio_ldo";
@@ -766,7 +780,7 @@
 };
 
 &cci_i2c0 {
-	camera@1a {
+	rear_cam: camera@1a {
 		compatible = "sony,imx363";
 		reg = <0x1a>;
 
@@ -791,6 +805,8 @@
 		rotation = <90>;
 		orientation = <1>;
 
+		lens-focus = <&rear_cam_actuator>;
+
 		port {
 			cam_rear_endpoint: endpoint {
 				data-lanes = <0 1 2 3>;
@@ -798,6 +814,14 @@
 				remote-endpoint = <&camss_endpoint0>;
 			};
 		};
+	};
+
+	rear_cam_actuator: actuator@72 {
+		compatible = "onnn,lc898219xi";
+		reg = <0x72>;
+		vdd-supply = <&cam_rear_vcc_vdd>;
+		vana-supply = <&cam_rear_vana_ldo>;
+		vio-supply = <&cam_vio_ldo>;
 	};
 };
 
@@ -1172,6 +1196,13 @@
 };
 
 &pm660l_gpios {
+	cam_rear_rcm_pin: cam-rear-actuator-state {
+		pins = "gpio2";
+		function = "normal";
+		power-source = <0>;
+		output-low;
+	};
+
 	cam_rear_ldo_pin: cam-rear-state {
 		pins = "gpio3";
 		function = "normal";
