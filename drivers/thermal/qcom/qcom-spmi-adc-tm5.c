@@ -366,11 +366,8 @@ static int adc_tm5_get_temp(struct thermal_zone_device *tz, int *temp)
 		return -EINVAL;
 
 	ret = iio_read_channel_processed(channel->iio, temp);
-	if (ret < 0)
+	if (ret)
 		return ret;
-
-	if (ret != IIO_VAL_INT)
-		return -EINVAL;
 
 	return 0;
 }
