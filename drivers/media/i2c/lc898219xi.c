@@ -142,8 +142,12 @@ static int lc898219xi_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct lc898219xi *lc898219xi = container_of(ctrl->handler,
 						     struct lc898219xi, ctrls);
 
+	pm_runtime_resume_and_get(lc898219xi->sd.dev);
+
 	if (ctrl->id == V4L2_CID_FOCUS_ABSOLUTE)
 		return lc898219xi_set_dac(lc898219xi, ctrl->val);
+
+	pm_runtime_put_autosuspend(lc898219xi->sd.dev);
 
 	return 0;
 }
@@ -157,13 +161,11 @@ static int lc898219xi_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct lc898219xi *lc898219xi = sd_to_lc898219xi(sd);
 	__v4l2_ctrl_handler_setup(&lc898219xi->ctrls);
 
-	return pm_runtime_resume_and_get(sd->dev);
+	return 0;
 }
 
 static int lc898219xi_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
-	pm_runtime_put_autosuspend(sd->dev);
-
 	return 0;
 }
 
