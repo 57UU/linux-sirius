@@ -1050,8 +1050,7 @@ static int smb_probe(struct platform_device *pdev)
 	chip->cdev_fcc_max = THERMAL_FCC_MAX;
 	chip->cdev_fcc_step = THERMAL_FCC_STEP;
 
-	chip->cdev = devm_thermal_of_cooling_device_register(chip->dev,
-							     chip->dev->of_node,
+	chip->cdev = devm_thermal_of_cooling_device_register(chip->dev, 0,
 							     "qcom-smb-charger",
 							     chip,
 							     &smb_cooling_ops);
