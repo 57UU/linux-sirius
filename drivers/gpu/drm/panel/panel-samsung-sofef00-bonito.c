@@ -210,8 +210,10 @@ static int sofef00_probe(struct mipi_dsi_device *dsi)
 	struct sofef00 *ctx;
 	int ret;
 
-	ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
+	ctx = devm_drm_panel_alloc(dev, struct sofef00, panel,
+				   &sofef00_panel_funcs,
+				   DRM_MODE_CONNECTOR_DSI);
+	if (IS_ERR(ctx))
 		return -ENOMEM;
 
 	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
@@ -226,9 +228,6 @@ static int sofef00_probe(struct mipi_dsi_device *dsi)
 	dsi->format = MIPI_DSI_FMT_RGB888;
 	dsi->mode_flags = MIPI_DSI_MODE_VIDEO_BURST |
 			  MIPI_DSI_CLOCK_NON_CONTINUOUS | MIPI_DSI_MODE_LPM;
-
-	drm_panel_init(&ctx->panel, dev, &sofef00_panel_funcs,
-		       DRM_MODE_CONNECTOR_DSI);
 
 	ctx->panel.backlight = sofef00_create_backlight(dsi);
 	if (IS_ERR(ctx->panel.backlight))
