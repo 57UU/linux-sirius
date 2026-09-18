@@ -5,6 +5,7 @@
 // Copyright (c) 2017 Andi Shyti <andi@etezian.org>
 
 #include <linux/delay.h>
+#include <linux/firmware.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/input/mt.h>
@@ -70,21 +71,65 @@
 #define STMFTS_MAX_FINGERS	10
 #define STMFTS_DEV_NAME		"stmfts"
 
-static const struct regulator_bulk_data stmfts_supplies[] = {
-	{ .supply = "vdd" },
-	{ .supply = "avdd" },
+/* FTS521 hardware register write/read opcode */
+#define FTS_HW_REG_W				0xfa
+#define FTS_HW_REG_R				0xfa
+
+/* FTS521 flash protocol */
+#define FTS_FLASH_UNLOCK_CODE0			0x25
+#define FTS_FLASH_UNLOCK_CODE1			0x20
+#define FTS_FLASH_ERASE_UNLOCK_CODE0		0xde
+#define FTS_FLASH_ERASE_UNLOCK_CODE1		0x03
+#define FTS_FLASH_ERASE_CODE0			0x6a
+#define FTS_FLASH_ERASE_CODE1			0xc0
+#define FTS_FLASH_DMA_CODE0			0x71
+#define FTS_FLASH_DMA_CODE1			0xc0
+#define FTS_FLASH_DMA_CONFIG			0x72
+
+#define FTS_ADDR_SYSTEM_RESET			0x20000024
+#define FTS_ADDR_CRC				0x20000078
+#define FTS_CRC_MASK				0x03
+
+#define FTS_DMA_CHUNK				32
+#define FTS_FLASH_CHUNK				(64 * 1024)
+
+/* Flash addresses (word addresses) */
+#define FTS_FLASH_ADDR_CODE			0x00000000
+#define FTS_FLASH_ADDR_CONFIG			0x00007c00
+#define FTS_FLASH_ADDR_CX			0x00007000
+
+/* .ftb firmware file header */
+#define FTS_FW_HEADER_SIZE			64
+#define FTS_FW_HEADER_SIGNATURE			0xaa55aa55
+#define FTS_FW_FTB_VER				0x00000001
+#define FTS_FW_BYTES_ALIGN			4
+
+/* Flash status poll */
+#define FTS_FLASH_RETRY_COUNT			200
+#define FTS_FLASH_WAIT_MS			50
+
+/* FIFO event for controller ready */
+#define FTS_EVT_CONTROLLER_READY		0x03
+
+/* Default firmware file name */
+#define FTS_FW_FILE				"st_fts_v521.ftb"
+
+enum stmfts_regulators {
+	STMFTS_REGULATOR_VDD,
+	STMFTS_REGULATOR_AVDD,
 };
 
 struct stmfts_data {
 	struct i2c_client *client;
 	struct input_dev *input;
-	struct gpio_desc *reset_gpio;
 	struct led_classdev led_cdev;
 	struct mutex mutex;
 
 	struct touchscreen_properties prop;
 
-	struct regulator_bulk_data *supplies;
+	struct regulator_bulk_data regulators[2];
+
+	struct gpio_desc *reset_gpio;
 
 	/*
 	 * Presence of ledvdd will be used also to check
@@ -106,10 +151,11 @@ struct stmfts_data {
 	bool led_status;
 	bool hover_enabled;
 	bool running;
+	bool is_fts521;
 };
 
 static int stmfts_brightness_set(struct led_classdev *led_cdev,
-				 enum led_brightness value)
+					enum led_brightness value)
 {
 	struct stmfts_data *sdata = container_of(led_cdev,
 					struct stmfts_data, led_cdev);
@@ -252,6 +298,7 @@ static void stmfts_parse_events(struct stmfts_data *sdata)
 		u8 *event = &sdata->data[i * STMFTS_EVENT_SIZE];
 
 		switch (event[0]) {
+
 		case STMFTS_EV_CONTROLLER_READY:
 		case STMFTS_EV_SLEEP_OUT_CONTROLLER_READY:
 		case STMFTS_EV_STATUS:
@@ -264,6 +311,7 @@ static void stmfts_parse_events(struct stmfts_data *sdata)
 		}
 
 		switch (event[0] & STMFTS_MASK_EVENT_ID) {
+
 		case STMFTS_EV_MULTI_TOUCH_ENTER:
 		case STMFTS_EV_MULTI_TOUCH_MOTION:
 			stmfts_report_contact_event(sdata, event);
@@ -285,9 +333,9 @@ static void stmfts_parse_events(struct stmfts_data *sdata)
 
 		case STMFTS_EV_ERROR:
 			dev_warn(&sdata->client->dev,
-				 "error code: 0x%x%x%x%x%x%x",
-				 event[6], event[5], event[4],
-				 event[3], event[2], event[1]);
+					"error code: 0x%x%x%x%x%x%x",
+					event[6], event[5], event[4],
+					event[3], event[2], event[1]);
 			break;
 
 		default:
@@ -302,7 +350,7 @@ static irqreturn_t stmfts_irq_handler(int irq, void *dev)
 	struct stmfts_data *sdata = dev;
 	int err;
 
-	guard(mutex)(&sdata->mutex);
+	mutex_lock(&sdata->mutex);
 
 	err = stmfts_read_events(sdata);
 	if (unlikely(err))
@@ -311,6 +359,7 @@ static irqreturn_t stmfts_irq_handler(int irq, void *dev)
 	else
 		stmfts_parse_events(sdata);
 
+	mutex_unlock(&sdata->mutex);
 	return IRQ_HANDLED;
 }
 
@@ -346,17 +395,17 @@ static int stmfts_input_open(struct input_dev *dev)
 		return err;
 	}
 
-	scoped_guard(mutex, &sdata->mutex) {
-		sdata->running = true;
+	mutex_lock(&sdata->mutex);
+	sdata->running = true;
 
-		if (sdata->hover_enabled) {
-			err = i2c_smbus_write_byte(sdata->client,
-						   STMFTS_SS_HOVER_SENSE_ON);
-			if (err)
-				dev_warn(&sdata->client->dev,
-					 "failed to enable hover\n");
-		}
+	if (sdata->hover_enabled) {
+		err = i2c_smbus_write_byte(sdata->client,
+					   STMFTS_SS_HOVER_SENSE_ON);
+		if (err)
+			dev_warn(&sdata->client->dev,
+				 "failed to enable hover\n");
 	}
+	mutex_unlock(&sdata->mutex);
 
 	if (sdata->use_key) {
 		err = i2c_smbus_write_byte(sdata->client,
@@ -380,17 +429,18 @@ static void stmfts_input_close(struct input_dev *dev)
 		dev_warn(&sdata->client->dev,
 			 "failed to disable touchscreen: %d\n", err);
 
-	scoped_guard(mutex, &sdata->mutex) {
-		sdata->running = false;
+	mutex_lock(&sdata->mutex);
 
-		if (sdata->hover_enabled) {
-			err = i2c_smbus_write_byte(sdata->client,
-						   STMFTS_SS_HOVER_SENSE_OFF);
-			if (err)
-				dev_warn(&sdata->client->dev,
-					 "failed to disable hover: %d\n", err);
-		}
+	sdata->running = false;
+
+	if (sdata->hover_enabled) {
+		err = i2c_smbus_write_byte(sdata->client,
+					   STMFTS_SS_HOVER_SENSE_OFF);
+		if (err)
+			dev_warn(&sdata->client->dev,
+				 "failed to disable hover: %d\n", err);
 	}
+	mutex_unlock(&sdata->mutex);
 
 	if (sdata->use_key) {
 		err = i2c_smbus_write_byte(sdata->client,
@@ -404,7 +454,7 @@ static void stmfts_input_close(struct input_dev *dev)
 }
 
 static ssize_t stmfts_sysfs_chip_id(struct device *dev,
-				    struct device_attribute *attr, char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
 
@@ -412,8 +462,7 @@ static ssize_t stmfts_sysfs_chip_id(struct device *dev,
 }
 
 static ssize_t stmfts_sysfs_chip_version(struct device *dev,
-					 struct device_attribute *attr,
-					 char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
 
@@ -421,7 +470,7 @@ static ssize_t stmfts_sysfs_chip_version(struct device *dev,
 }
 
 static ssize_t stmfts_sysfs_fw_ver(struct device *dev,
-				   struct device_attribute *attr, char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
 
@@ -429,7 +478,7 @@ static ssize_t stmfts_sysfs_fw_ver(struct device *dev,
 }
 
 static ssize_t stmfts_sysfs_config_id(struct device *dev,
-				      struct device_attribute *attr, char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
 
@@ -437,8 +486,7 @@ static ssize_t stmfts_sysfs_config_id(struct device *dev,
 }
 
 static ssize_t stmfts_sysfs_config_version(struct device *dev,
-					   struct device_attribute *attr,
-					   char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
 
@@ -446,8 +494,7 @@ static ssize_t stmfts_sysfs_config_version(struct device *dev,
 }
 
 static ssize_t stmfts_sysfs_read_status(struct device *dev,
-					struct device_attribute *attr,
-					char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
 	u8 status[4];
@@ -462,8 +509,7 @@ static ssize_t stmfts_sysfs_read_status(struct device *dev,
 }
 
 static ssize_t stmfts_sysfs_hover_enable_read(struct device *dev,
-					      struct device_attribute *attr,
-					      char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
 
@@ -471,32 +517,31 @@ static ssize_t stmfts_sysfs_hover_enable_read(struct device *dev,
 }
 
 static ssize_t stmfts_sysfs_hover_enable_write(struct device *dev,
-					       struct device_attribute *attr,
-					       const char *buf, size_t len)
+				struct device_attribute *attr,
+				const char *buf, size_t len)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
 	unsigned long value;
-	bool hover;
-	int err;
+	int err = 0;
 
 	if (kstrtoul(buf, 0, &value))
 		return -EINVAL;
 
-	hover = !!value;
+	mutex_lock(&sdata->mutex);
 
-	guard(mutex)(&sdata->mutex);
+	if (value && sdata->hover_enabled)
+		goto out;
 
-	if (hover != sdata->hover_enabled) {
-		if (sdata->running) {
-			err = i2c_smbus_write_byte(sdata->client,
-						   value ? STMFTS_SS_HOVER_SENSE_ON :
-							   STMFTS_SS_HOVER_SENSE_OFF);
-			if (err)
-				return err;
-		}
+	if (sdata->running)
+		err = i2c_smbus_write_byte(sdata->client,
+					   value ? STMFTS_SS_HOVER_SENSE_ON :
+						   STMFTS_SS_HOVER_SENSE_OFF);
 
-		sdata->hover_enabled = hover;
-	}
+	if (!err)
+		sdata->hover_enabled = !!value;
+
+out:
+	mutex_unlock(&sdata->mutex);
 
 	return len;
 }
@@ -522,10 +567,380 @@ static struct attribute *stmfts_sysfs_attrs[] = {
 };
 ATTRIBUTE_GROUPS(stmfts_sysfs);
 
-static int stmfts_read_system_info(struct stmfts_data *sdata)
+/*
+ * FTS521 flash protocol helpers.
+ * These implement the DMA-based firmware flash procedure used by
+ * ST FTS521/FTM5 touchscreen controllers.
+ */
+
+static int fts521_hw_reg_write(struct i2c_client *client, u32 addr,
+			       const u8 *data, size_t len)
+{
+	u8 buf[4 + 16];
+	size_t msg_len = 4 + len;
+
+	if (msg_len > sizeof(buf))
+		return -EINVAL;
+
+	buf[0] = (addr >> 24) & 0xff;
+	buf[1] = (addr >> 16) & 0xff;
+	buf[2] = (addr >> 8) & 0xff;
+	buf[3] = addr & 0xff;
+	memcpy(&buf[4], data, len);
+
+	return i2c_smbus_write_i2c_block_data(client, FTS_HW_REG_W,
+					      msg_len, buf);
+}
+
+static int fts521_hw_reg_read(struct i2c_client *client, u32 addr,
+			      u8 *data, size_t len)
+{
+	u8 addr_buf[4];
+	struct i2c_msg msgs[2] = {
+		{
+			.addr = client->addr,
+			.len = 4,
+			.buf = addr_buf,
+		},
+		{
+			.addr = client->addr,
+			.flags = I2C_M_RD,
+			.len = len,
+			.buf = data,
+		},
+	};
+	int ret;
+
+	addr_buf[0] = (addr >> 24) & 0xff;
+	addr_buf[1] = (addr >> 16) & 0xff;
+	addr_buf[2] = (addr >> 8) & 0xff;
+	addr_buf[3] = addr & 0xff;
+
+	ret = i2c_transfer(client->adapter, msgs, 2);
+	if (ret < 0)
+		return ret;
+
+	return ret == 2 ? 0 : -EIO;
+}
+
+static int fts521_hold_m3(struct i2c_client *client)
+{
+	u8 cmd = 0x01;
+
+	return fts521_hw_reg_write(client, FTS_ADDR_SYSTEM_RESET, &cmd, 1);
+}
+
+static int fts521_flash_unlock(struct i2c_client *client)
+{
+	u8 cmd[2] = { FTS_FLASH_UNLOCK_CODE0, FTS_FLASH_UNLOCK_CODE1 };
+
+	return fts521_hw_reg_write(client, 0x20000000, cmd, 2);
+}
+
+static int fts521_flash_erase_unlock(struct i2c_client *client)
+{
+	u8 cmd[2] = { FTS_FLASH_ERASE_UNLOCK_CODE0,
+		      FTS_FLASH_ERASE_UNLOCK_CODE1 };
+
+	return fts521_hw_reg_write(client, 0x20000000, cmd, 2);
+}
+
+static int fts521_wait_flash_ready(struct i2c_client *client, u8 type)
+{
+	u8 status[2];
+	int retries;
+	int ret;
+
+	for (retries = 0; retries < FTS_FLASH_RETRY_COUNT; retries++) {
+		ret = fts521_hw_reg_read(client, 0x20000000 + type,
+					 status, sizeof(status));
+		if (ret)
+			return ret;
+
+		if (!(status[0] & 0x80))
+			return 0;
+
+		msleep(FTS_FLASH_WAIT_MS);
+	}
+
+	return -ETIMEDOUT;
+}
+
+static int fts521_flash_erase(struct i2c_client *client)
+{
+	u8 cmd;
+	int ret;
+
+	/* Disable info */
+	cmd = 0x00;
+	ret = fts521_hw_reg_write(client,
+				  0x20000000 + FTS_FLASH_ERASE_CODE0 + 1,
+				  &cmd, 1);
+	if (ret)
+		return ret;
+
+	/* Full erase command */
+	cmd = FTS_FLASH_ERASE_CODE1;
+	ret = fts521_hw_reg_write(client, 0x20000000 + FTS_FLASH_ERASE_CODE0,
+				  &cmd, 1);
+	if (ret)
+		return ret;
+
+	return fts521_wait_flash_ready(client, FTS_FLASH_ERASE_CODE0);
+}
+
+static int fts521_flash_write_fw(struct i2c_client *client, const u8 *data,
+				 size_t size)
+{
+	u8 *dma_buf;
+	u8 dma_cfg[7];
+	int ret;
+	size_t remaining, loaded, chunk;
+	u32 flash_word_addr = FTS_FLASH_ADDR_CODE;
+
+	dma_buf = kmalloc(FTS_DMA_CHUNK + 4, GFP_KERNEL);
+	if (!dma_buf)
+		return -ENOMEM;
+
+	remaining = size;
+	while (remaining > 0) {
+		loaded = 0;
+
+		while (loaded < FTS_FLASH_CHUNK && remaining > 0) {
+			chunk = min_t(size_t, remaining, FTS_DMA_CHUNK);
+			if (loaded + chunk > FTS_FLASH_CHUNK)
+				chunk = FTS_FLASH_CHUNK - loaded;
+
+			/* Write to DMA memory at 0x00100000 */
+			dma_buf[0] = 0x10;
+			dma_buf[1] = 0x00;
+			dma_buf[2] = 0x00;
+			dma_buf[3] = 0x00;
+			memcpy(&dma_buf[4], data, chunk);
+
+			ret = i2c_smbus_write_i2c_block_data(client,
+							     FTS_HW_REG_W,
+							     4 + chunk,
+							     dma_buf);
+			if (ret)
+				goto out;
+
+			data += chunk;
+			loaded += chunk;
+			remaining -= chunk;
+		}
+
+		/* Configure DMA: dest addr + word count */
+		dma_cfg[0] = 0x00;
+		dma_cfg[1] = 0x00;
+		dma_cfg[2] = flash_word_addr & 0xff;
+		dma_cfg[3] = (flash_word_addr >> 8) & 0xff;
+		dma_cfg[4] = ((loaded / 4) - 1) & 0xff;
+		dma_cfg[5] = (((loaded / 4) - 1) >> 8) & 0xff;
+		dma_cfg[6] = 0x00;
+
+		ret = fts521_hw_reg_write(client,
+					  0x20000000 + FTS_FLASH_DMA_CONFIG,
+					  dma_cfg, 7);
+		if (ret)
+			goto out;
+
+		/* Trigger DMA burn */
+		{
+			u8 trigger = FTS_FLASH_DMA_CODE1;
+
+			ret = fts521_hw_reg_write(client,
+						  0x20000000 + FTS_FLASH_DMA_CODE0,
+						  &trigger, 1);
+		}
+		if (ret)
+			goto out;
+
+		ret = fts521_wait_flash_ready(client, FTS_FLASH_DMA_CODE0);
+		if (ret)
+			goto out;
+
+		flash_word_addr += FTS_FLASH_CHUNK / 4;
+	}
+
+	ret = 0;
+out:
+	kfree(dma_buf);
+	return ret;
+}
+
+static int fts521_check_crc(struct i2c_client *client)
+{
+	u8 crc_val;
+	int ret;
+
+	ret = fts521_hw_reg_read(client, FTS_ADDR_CRC, &crc_val, 1);
+	if (ret)
+		return ret;
+
+	return crc_val & FTS_CRC_MASK;
+}
+
+static int fts521_load_firmware(struct stmfts_data *sdata)
+{
+	struct i2c_client *client = sdata->client;
+	const struct firmware *fw = NULL;
+	const u8 *fw_data;
+	u32 sec0_size, sec1_size, sec2_size, sec3_size;
+	u32 signature;
+	int crc_status;
+	int ret;
+
+	dev_info(&client->dev, "FTS521: checking firmware status\n");
+
+	crc_status = fts521_check_crc(client);
+	if (crc_status < 0) {
+		dev_err(&client->dev, "failed to read CRC status: %d\n",
+			crc_status);
+		return crc_status;
+	}
+
+	if (crc_status == 0) {
+		dev_info(&client->dev,
+			 "FTS521: firmware CRC OK, skipping flash\n");
+		return 0;
+	}
+
+	dev_info(&client->dev, "FTS521: CRC error (%d), loading firmware\n",
+		 crc_status);
+
+	ret = request_firmware(&fw, FTS_FW_FILE, &client->dev);
+	if (ret) {
+		dev_err(&client->dev, "failed to request firmware %s: %d\n",
+			FTS_FW_FILE, ret);
+		return ret;
+	}
+
+	if (fw->size < FTS_FW_HEADER_SIZE + FTS_FW_BYTES_ALIGN) {
+		dev_err(&client->dev, "firmware too small (%zu bytes)\n",
+			fw->size);
+		ret = -EINVAL;
+		goto release_fw;
+	}
+
+	fw_data = fw->data;
+
+	signature = fw_data[0] | (fw_data[1] << 8) |
+		    (fw_data[2] << 16) | (fw_data[3] << 24);
+	if (signature != FTS_FW_HEADER_SIGNATURE) {
+		dev_err(&client->dev, "bad firmware signature: 0x%08x\n",
+			signature);
+		ret = -EINVAL;
+		goto release_fw;
+	}
+
+	sec0_size = fw_data[40] | (fw_data[41] << 8) |
+		    (fw_data[42] << 16) | (fw_data[43] << 24);
+	sec1_size = fw_data[44] | (fw_data[45] << 8) |
+		    (fw_data[46] << 16) | (fw_data[47] << 24);
+	sec2_size = fw_data[48] | (fw_data[49] << 8) |
+		    (fw_data[50] << 16) | (fw_data[51] << 24);
+	sec3_size = fw_data[52] | (fw_data[53] << 8) |
+		    (fw_data[54] << 16) | (fw_data[55] << 24);
+
+	dev_info(&client->dev,
+		 "FTS521: FW sizes: code=%u config=%u cx=%u\n",
+		 sec0_size, sec1_size, sec2_size);
+
+	/* Hold M3 */
+	ret = fts521_hold_m3(client);
+	if (ret) {
+		dev_err(&client->dev, "hold M3 failed: %d\n", ret);
+		goto release_fw;
+	}
+	usleep_range(1000, 2000);
+
+	/* Flash unlock */
+	ret = fts521_flash_unlock(client);
+	if (ret) {
+		dev_err(&client->dev, "flash unlock failed: %d\n", ret);
+		goto release_fw;
+	}
+
+	/* Erase unlock */
+	ret = fts521_flash_erase_unlock(client);
+	if (ret) {
+		dev_err(&client->dev, "erase unlock failed: %d\n", ret);
+		goto release_fw;
+	}
+
+	/* Full erase */
+	ret = fts521_flash_erase(client);
+	if (ret) {
+		dev_err(&client->dev, "flash erase failed: %d\n", ret);
+		goto release_fw;
+	}
+
+	/* Write firmware data (code + config + cx) */
+	fw_data = fw->data + FTS_FW_HEADER_SIZE;
+	ret = fts521_flash_write_fw(client, fw_data,
+				    sec0_size + sec1_size + sec2_size);
+	if (ret) {
+		dev_err(&client->dev, "firmware write failed: %d\n", ret);
+		goto release_fw;
+	}
+
+	/* System reset after flash */
+	if (sdata->reset_gpio) {
+		gpiod_set_value_cansleep(sdata->reset_gpio, 1);
+		msleep(10);
+		gpiod_set_value_cansleep(sdata->reset_gpio, 0);
+	}
+	msleep(50);
+
+	/* Re-read chip info */
+	{
+		u8 reg[8];
+
+		ret = i2c_smbus_read_i2c_block_data(client, STMFTS_READ_INFO,
+						    sizeof(reg), reg);
+		if (ret == sizeof(reg)) {
+			sdata->chip_id = be16_to_cpup((__be16 *)&reg[6]);
+			sdata->chip_ver = reg[0];
+			sdata->fw_ver = be16_to_cpup((__be16 *)&reg[2]);
+			sdata->config_id = reg[4];
+			sdata->config_ver = reg[5];
+			dev_info(&client->dev,
+				 "FTS521: post-flash chip_id=0x%04x fw=%u\n",
+				 sdata->chip_id, sdata->fw_ver);
+		}
+	}
+
+	dev_info(&client->dev, "FTS521: firmware loaded successfully\n");
+	ret = 0;
+
+release_fw:
+	release_firmware(fw);
+	return ret;
+}
+
+static int stmfts_power_on(struct stmfts_data *sdata)
 {
 	int err;
 	u8 reg[8];
+
+	err = regulator_bulk_enable(ARRAY_SIZE(sdata->regulators),
+				    sdata->regulators);
+	if (err)
+		return err;
+
+	/*
+	 * The datasheet does not specify the power on time, but considering
+	 * that the reset time is < 10ms, I sleep 20ms to be sure
+	 */
+	msleep(20);
+
+	if (sdata->reset_gpio) {
+		gpiod_set_value_cansleep(sdata->reset_gpio, 1);
+		usleep_range(1000, 2000);
+		gpiod_set_value_cansleep(sdata->reset_gpio, 0);
+		usleep_range(10000, 15000);
+	}
 
 	err = i2c_smbus_read_i2c_block_data(sdata->client, STMFTS_READ_INFO,
 					    sizeof(reg), reg);
@@ -540,21 +955,17 @@ static int stmfts_read_system_info(struct stmfts_data *sdata)
 	sdata->config_id = reg[4];
 	sdata->config_ver = reg[5];
 
-	return 0;
-}
+	/* FTS521 may need firmware loaded before it can function */
+	if (sdata->is_fts521) {
+		err = fts521_load_firmware(sdata);
+		if (err)
+			return dev_err_probe(&sdata->client->dev, err,
+					     "FTS521 firmware load failed\n");
+	}
 
-static void stmfts_reset(struct stmfts_data *sdata)
-{
-	gpiod_set_value_cansleep(sdata->reset_gpio, 1);
-	msleep(20);
+	enable_irq(sdata->client->irq);
 
-	gpiod_set_value_cansleep(sdata->reset_gpio, 0);
 	msleep(50);
-}
-
-static int stmfts_configure(struct stmfts_data *sdata)
-{
-	int err;
 
 	err = stmfts_command(sdata, STMFTS_SYSTEM_RESET);
 	if (err)
@@ -580,52 +991,13 @@ static int stmfts_configure(struct stmfts_data *sdata)
 	if (err)
 		return err;
 
-	return 0;
-}
-
-static int stmfts_power_on(struct stmfts_data *sdata)
-{
-	int err;
-
-	err = regulator_bulk_enable(ARRAY_SIZE(stmfts_supplies),
-				    sdata->supplies);
-	if (err)
-		return err;
-
-	/*
-	 * The datasheet does not specify the power on time, but considering
-	 * that the reset time is < 10ms, I sleep 20ms to be sure
-	 */
-	msleep(20);
-
-	if (sdata->reset_gpio)
-		stmfts_reset(sdata);
-
-	err = stmfts_read_system_info(sdata);
-	if (err)
-		goto err_disable_regulators;
-
-	enable_irq(sdata->client->irq);
-
-	msleep(50);
-
-	err = stmfts_configure(sdata);
-	if (err)
-		goto err_disable_irq;
-
 	/*
 	 * At this point no one is using the touchscreen
 	 * and I don't really care about the return value
 	 */
-	(void)i2c_smbus_write_byte(sdata->client, STMFTS_SLEEP_IN);
+	(void) i2c_smbus_write_byte(sdata->client, STMFTS_SLEEP_IN);
 
 	return 0;
-
-err_disable_irq:
-	disable_irq(sdata->client->irq);
-err_disable_regulators:
-	regulator_bulk_disable(ARRAY_SIZE(stmfts_supplies), sdata->supplies);
-	return err;
 }
 
 static void stmfts_power_off(void *data)
@@ -633,11 +1005,10 @@ static void stmfts_power_off(void *data)
 	struct stmfts_data *sdata = data;
 
 	disable_irq(sdata->client->irq);
-
 	if (sdata->reset_gpio)
 		gpiod_set_value_cansleep(sdata->reset_gpio, 1);
-
-	regulator_bulk_disable(ARRAY_SIZE(stmfts_supplies), sdata->supplies);
+	regulator_bulk_disable(ARRAY_SIZE(sdata->regulators),
+						sdata->regulators);
 }
 
 static int stmfts_enable_led(struct stmfts_data *sdata)
@@ -666,7 +1037,6 @@ static int stmfts_enable_led(struct stmfts_data *sdata)
 
 static int stmfts_probe(struct i2c_client *client)
 {
-	struct device *dev = &client->dev;
 	int err;
 	struct stmfts_data *sdata;
 
@@ -675,7 +1045,7 @@ static int stmfts_probe(struct i2c_client *client)
 						I2C_FUNC_SMBUS_I2C_BLOCK))
 		return -ENODEV;
 
-	sdata = devm_kzalloc(dev, sizeof(*sdata), GFP_KERNEL);
+	sdata = devm_kzalloc(&client->dev, sizeof(*sdata), GFP_KERNEL);
 	if (!sdata)
 		return -ENOMEM;
 
@@ -685,19 +1055,26 @@ static int stmfts_probe(struct i2c_client *client)
 	mutex_init(&sdata->mutex);
 	init_completion(&sdata->cmd_done);
 
-	err = devm_regulator_bulk_get_const(dev,
-					    ARRAY_SIZE(stmfts_supplies),
-					    stmfts_supplies,
-					    &sdata->supplies);
+	sdata->is_fts521 = device_property_read_bool(&client->dev,
+						     "st,fts521") ||
+			   of_device_is_compatible(client->dev.of_node,
+						   "st,fts");
+
+	sdata->regulators[STMFTS_REGULATOR_VDD].supply = "vdd";
+	sdata->regulators[STMFTS_REGULATOR_AVDD].supply = "avdd";
+	err = devm_regulator_bulk_get(&client->dev,
+				      ARRAY_SIZE(sdata->regulators),
+				      sdata->regulators);
 	if (err)
 		return err;
 
-	sdata->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	sdata->reset_gpio = devm_gpiod_get_optional(&client->dev, "reset",
+						    GPIOD_OUT_HIGH);
 	if (IS_ERR(sdata->reset_gpio))
-		return dev_err_probe(dev, PTR_ERR(sdata->reset_gpio),
-				     "Failed to get GPIO 'reset'\n");
+		return dev_err_probe(&client->dev, PTR_ERR(sdata->reset_gpio),
+				     "failed to get reset gpio\n");
 
-	sdata->input = devm_input_allocate_device(dev);
+	sdata->input = devm_input_allocate_device(&client->dev);
 	if (!sdata->input)
 		return -ENOMEM;
 
@@ -716,7 +1093,8 @@ static int stmfts_probe(struct i2c_client *client)
 	input_set_abs_params(sdata->input, ABS_MT_PRESSURE, 0, 255, 0, 0);
 	input_set_abs_params(sdata->input, ABS_DISTANCE, 0, 255, 0, 0);
 
-	sdata->use_key = device_property_read_bool(dev, "touch-key-connected");
+	sdata->use_key = device_property_read_bool(&client->dev,
+						   "touch-key-connected");
 	if (sdata->use_key) {
 		input_set_capability(sdata->input, EV_KEY, KEY_MENU);
 		input_set_capability(sdata->input, EV_KEY, KEY_BACK);
@@ -736,20 +1114,20 @@ static int stmfts_probe(struct i2c_client *client)
 	 * interrupts. To be on the safe side it's better to not enable
 	 * the interrupts during their request.
 	 */
-	err = devm_request_threaded_irq(dev, client->irq,
+	err = devm_request_threaded_irq(&client->dev, client->irq,
 					NULL, stmfts_irq_handler,
 					IRQF_ONESHOT | IRQF_NO_AUTOEN,
 					"stmfts_irq", sdata);
 	if (err)
 		return err;
 
-	dev_dbg(dev, "initializing ST-Microelectronics FTS...\n");
+	dev_dbg(&client->dev, "initializing ST-Microelectronics FTS...\n");
 
 	err = stmfts_power_on(sdata);
 	if (err)
 		return err;
 
-	err = devm_add_action_or_reset(dev, stmfts_power_off, sdata);
+	err = devm_add_action_or_reset(&client->dev, stmfts_power_off, sdata);
 	if (err)
 		return err;
 
@@ -766,13 +1144,13 @@ static int stmfts_probe(struct i2c_client *client)
 			 * without LEDs. The ledvdd regulator pointer will be
 			 * used as a flag.
 			 */
-			dev_warn(dev, "unable to use touchkey leds\n");
+			dev_warn(&client->dev, "unable to use touchkey leds\n");
 			sdata->ledvdd = NULL;
 		}
 	}
 
-	pm_runtime_enable(dev);
-	device_enable_async_suspend(dev);
+	pm_runtime_enable(&client->dev);
+	device_enable_async_suspend(&client->dev);
 
 	return 0;
 }
@@ -797,10 +1175,9 @@ static int stmfts_runtime_suspend(struct device *dev)
 static int stmfts_runtime_resume(struct device *dev)
 {
 	struct stmfts_data *sdata = dev_get_drvdata(dev);
-	struct i2c_client *client = sdata->client;
 	int ret;
 
-	ret = i2c_smbus_write_byte(client, STMFTS_SLEEP_OUT);
+	ret = i2c_smbus_write_byte(sdata->client, STMFTS_SLEEP_OUT);
 	if (ret)
 		dev_err(dev, "failed to resume device: %d\n", ret);
 
@@ -831,13 +1208,14 @@ static const struct dev_pm_ops stmfts_pm_ops = {
 #ifdef CONFIG_OF
 static const struct of_device_id stmfts_of_match[] = {
 	{ .compatible = "st,stmfts", },
+	{ .compatible = "st,fts", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, stmfts_of_match);
 #endif
 
 static const struct i2c_device_id stmfts_id[] = {
-	{ .name = "stmfts" },
+	{ "stmfts" },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, stmfts_id);
@@ -859,4 +1237,4 @@ module_i2c_driver(stmfts_driver);
 
 MODULE_AUTHOR("Andi Shyti <andi.shyti@samsung.com>");
 MODULE_DESCRIPTION("STMicroelectronics FTS Touch Screen");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

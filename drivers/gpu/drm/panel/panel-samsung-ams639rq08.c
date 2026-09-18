@@ -85,14 +85,10 @@ static int ams639rq08_on(struct ams639rq08 *ctx)
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MCS_PASSWD1, 0xa5, 0xa5);
 
 	/* Page Address Set */
-	mipi_dsi_dcs_set_page_address_multi(&dsi_ctx, 0x0000, 0x0923);
+	mipi_dsi_dcs_set_page_address_multi(&dsi_ctx, 0x0000, 0x08c3);
 
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MCS_PASSWD1, 0x5a, 0x5a);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MCS_PASSWD2, 0x5a, 0x5a);
-
-	/* Set DDIC internal HFP */
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MCS_ACCESS_PROT_OFF, 0x23);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MCS_BIAS_CURRENT_CTRL, 0x11);
 
 	/* OFC Setting 84.1 Mhz */
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xe9, 0x11, 0x55,
@@ -172,17 +168,17 @@ static int ams639rq08_unprepare(struct drm_panel *panel)
 }
 
 static const struct drm_display_mode ams639rq08_mode = {
-	.clock = (1080 + 64 + 20 + 64) * (2340 + 64 + 20 + 64) * 60 / 1000,
+	.clock = (1080 + 48 + 16 + 48) * (2244 + 28 + 12 + 28) * 60 / 1000,
 	.hdisplay = 1080,
-	.hsync_start = 1080 + 64,
-	.hsync_end = 1080 + 64 + 20,
-	.htotal = 1080 + 64 + 20 + 64,
-	.vdisplay = 2340,
-	.vsync_start = 2340 + 64,
-	.vsync_end = 2340 + 64 + 20,
-	.vtotal = 2340 + 64 + 20 + 64,
-	.width_mm = 68,
-	.height_mm = 147,
+	.hsync_start = 1080 + 48,
+	.hsync_end = 1080 + 48 + 16,
+	.htotal = 1080 + 48 + 16 + 48,
+	.vdisplay = 2244,
+	.vsync_start = 2244 + 28,
+	.vsync_end = 2244 + 28 + 12,
+	.vtotal = 2244 + 28 + 12 + 28,
+	.width_mm = 65,
+	.height_mm = 135,
 	.type = DRM_MODE_TYPE_DRIVER,
 };
 
@@ -243,8 +239,8 @@ ams639rq08_create_backlight(struct mipi_dsi_device *dsi)
 	struct device *dev = &dsi->dev;
 	const struct backlight_properties props = {
 		.type = BACKLIGHT_RAW,
-		.brightness = 1023,
-		.max_brightness = 2047,
+		.brightness = 512,
+		.max_brightness = 1023,
 	};
 
 	return devm_backlight_device_register(dev, dev_name(dev), dev, dsi,
