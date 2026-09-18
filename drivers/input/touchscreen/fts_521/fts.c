@@ -46,7 +46,7 @@
 #include <linux/completion.h>
 
 #include <linux/gpio.h>
-#include <linux/of_gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/regulator/consumer.h>
 #include <linux/vmalloc.h>
 #include <linux/pinctrl/consumer.h>
@@ -3993,12 +3993,26 @@ err_pinctrl_get:
 	return retval;
 }
 
-/**
- * Retrieve and parse the hw information from the device tree node defined in the system.
- * the most important information to obtain are: IRQ and RESET gpio numbers, power regulator names
- * In the device file node is possible to define additional optional information that can be parsed here.
+/* of_get_named_gpio() was removed in 7.2; equivalent helper via the
+ * descriptor API (gpiolib resolves both -gpios and -gpio suffixes).
+ * Returns the GPIO number without taking ownership, like the old helper.
  */
+static int fts_of_get_named_gpio(struct device *dev, const char *conid)
+{
+	struct gpio_desc *desc;
+	int gpio;
+
+	desc = gpiod_get_index(dev, conid, 0, GPIOD_ASIS);
+	if (IS_ERR(desc))
+		return PTR_ERR(desc);
+	gpio = desc_to_gpio(desc);
+	gpiod_put(desc);
+	return gpio;
+}
+
+
 static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
+
 {
 	int retval;
 	const char *name;
@@ -4006,7 +4020,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 	struct fts_config_info *config_info;
 	u32 temp_val;
 
-	bdata->irq_gpio = of_get_named_gpio(np, "fts,irq-gpio", 0);
+	bdata->irq_gpio = fts_of_get_named_gpio(dev, "fts,irq");
 
 	logError(0, "%s irq_gpio = %d\n", tag, bdata->irq_gpio);
 
@@ -4031,7 +4045,7 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 	}
 
 	if (of_property_read_bool(np, "fts,reset-gpio-enable")) {
-		bdata->reset_gpio = of_get_named_gpio(np, "fts,reset-gpio", 0);
+		bdata->reset_gpio = fts_of_get_named_gpio(dev, "fts,reset");
 		logError(0, "%s reset_gpio =%d\n", tag, bdata->reset_gpio);
 	} else {
 		bdata->reset_gpio = GPIO_NOT_DEFINED;
