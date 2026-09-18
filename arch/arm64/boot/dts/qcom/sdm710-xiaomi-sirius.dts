@@ -886,6 +886,11 @@
 	vdd-3.3-ch1-supply = <&vreg_l19a_3p3>;
 
 	qcom,snoc-host-cap-8bit-quirk;
+	qcom,ath10k-calibration-variant = "xiaomi_sirius";
+
+	wifi-firmware {
+		iommus = <&apps_smmu 0x42 0x1>;
+	};
 };
 
 &uart6 {
