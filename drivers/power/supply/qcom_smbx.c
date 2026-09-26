@@ -1099,7 +1099,7 @@ static void smb_otg_detect_work(struct work_struct *work)
 {
 	struct smb_chip *chip;
 	unsigned int stat = 0, stat4 = 0, v50f = 0;
-	bool cable;
+	bool rd, vbus, cable;
 	int rc;
 
 	chip = container_of(work, struct smb_chip, otg_detect_work.work);
@@ -1112,20 +1112,28 @@ static void smb_otg_detect_work(struct work_struct *work)
 	regmap_read(chip->regmap, chip->base + TYPE_C_STATUS_4, &stat4);
 	regmap_read(chip->regmap, 0x150F, &v50f);
 
-	/* An OTG accessory pulls CC down with Rd, while a plain PC
-	 * connection must never trigger the boost. DFP_RA_RA alone
-	 * also shows with a PC cable attached, so only Rd states
-	 * count here. */
-	cable = !!(stat4 & (DFP_RD_RD_BIT | DFP_RD_RA_VCONN_BIT)) ||
+	rd = !!(stat4 & (DFP_RD_RD_BIT | DFP_RD_RA_VCONN_BIT)) ||
 		!!(v50f & U_USB_GND_NOVBUS_BIT);
+	vbus = !!(stat4 & TYPEC_VBUS_STATUS_BIT);
+	/* An OTG accessory pulls CC down with Rd but drives no VBUS in,
+	 * while a PC always drives VBUS. Gate the automatic boost on
+	 * Rd without VBUS so a PC cable can never trigger it, whatever
+	 * the CC or ID wiring reports. DFP_RA_RA alone is ignored as it
+	 * also shows with a plain PC cable attached. Manual writes
+	 * bypass the gate by design. */
+	cable = rd;
 	if (cable != chip->otg_last_cable) {
 		chip->otg_last_cable = cable;
 		chip->otg_force = false;
 		smb_otg_dump_regs(chip, cable ? "attached" : "detached");
 	}
 
-	if (!chip->otg_force && cable != chip->otg_boost_on)
-		smb_otg_set_boost(chip, cable);
+	if (!chip->otg_force) {
+		if (!chip->otg_boost_on && cable && !vbus)
+			smb_otg_set_boost(chip, true);
+		else if (chip->otg_boost_on && !cable)
+			smb_otg_set_boost(chip, false);
+	}
 
 resched:
 	schedule_delayed_work(&chip->otg_detect_work,
