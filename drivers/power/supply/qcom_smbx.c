@@ -13,6 +13,7 @@
 #include <linux/iio/consumer.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
+#include <linux/kstrtox.h>
 #include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -20,6 +21,7 @@
 #include <linux/of.h>
 #include <linux/power_supply.h>
 #include <linux/regmap.h>
+#include <linux/sysfs.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
 #include <linux/thermal.h>
@@ -113,6 +115,20 @@
 
 #define OTG_ENG_OTG_CFG					0x1C0
 #define ENG_BUCKBOOST_HALT1_8_MODE_BIT			BIT(0)
+/*
+ * OTG boost (VBUS output for USB host mode).
+ *
+ * Cable presence is read from the PMIC-internal Type-C/U_USB status,
+ * mirroring the downstream smb5 "uusb-otg" logic. The board gpio38
+ * extcon is deliberately not used: it only reflects the legacy ID pin
+ * and misses CC-signalled accessories as well as one plug orientation.
+ * The boost enable bit matches the downstream DCDC_CMD_OTG register.
+ */
+#define DCDC_CMD_OTG_REG				0x1140
+#define OTG_EN_BIT					BIT(0)
+
+#define OTG_DETECT_POLL_MS				2000
+
 
 #define APSD_STATUS					0x307
 #define APSD_STATUS_7_BIT				BIT(7)
@@ -399,6 +415,10 @@ struct smb_chip {
 
 	struct delayed_work status_change_work;
 	int cable_irq;
+	struct delayed_work otg_detect_work;
+	bool otg_boost_on;
+	bool otg_force;
+	int otg_last_cable;
 	bool wakeup_enabled;
 
 	struct iio_channel *usb_in_i_chan;
@@ -969,6 +989,149 @@ static const struct thermal_cooling_device_ops smb_cooling_ops = {
 	.power2state = smb_thermal_power2state,
 };
 
+static int smb_otg_set_boost(struct smb_chip *chip, bool on);
+static ssize_t otg_boost_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct smb_chip *chip = dev_get_drvdata(dev);
+	unsigned int val = 0;
+	int rc;
+
+	rc = regmap_read(chip->regmap, DCDC_CMD_OTG_REG, &val);
+	if (rc < 0)
+		return rc;
+
+	return sysfs_emit(buf, "%u\n", !!(val & OTG_EN_BIT));
+}
+
+static ssize_t otg_boost_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct smb_chip *chip = dev_get_drvdata(dev);
+	bool on;
+	int rc;
+
+	rc = kstrtobool(buf, &on);
+	if (rc < 0)
+		return rc;
+
+	chip->otg_force = true;
+	rc = smb_otg_set_boost(chip, on);
+	if (rc < 0)
+		return rc;
+
+	return count;
+}
+static DEVICE_ATTR_RW(otg_boost);
+
+static ssize_t otg_cable_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct smb_chip *chip = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", chip->otg_last_cable);
+}
+static DEVICE_ATTR_RO(otg_cable);
+
+static ssize_t otg_regs_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct smb_chip *chip = dev_get_drvdata(dev);
+	unsigned int b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0;
+
+	regmap_read(chip->regmap, chip->base + 0x30B, &b);
+	regmap_read(chip->regmap, chip->base + 0x30C, &c);
+	regmap_read(chip->regmap, chip->base + TYPE_C_STATUS_3, &d);
+	regmap_read(chip->regmap, chip->base + TYPE_C_STATUS_4, &e);
+	regmap_read(chip->regmap, chip->base + 0x30F, &f);
+	regmap_read(chip->regmap, chip->base + TYPE_C_CFG, &g);
+	regmap_read(chip->regmap, 0x150F, &h);
+	return sysfs_emit(buf, "30B=%02x 30C=%02x 30D=%02x 30E=%02x 30F=%02x 358=%02x 150F=%02x\n",
+			  b, c, d, e, f, g, h);
+}
+static DEVICE_ATTR_RO(otg_regs);
+
+static struct attribute *smb_otg_attrs[] = {
+	&dev_attr_otg_boost.attr,
+	&dev_attr_otg_cable.attr,
+	&dev_attr_otg_regs.attr,
+	NULL,
+};
+
+static const struct attribute_group smb_otg_attr_group = {
+	.attrs = smb_otg_attrs,
+};
+
+static const struct attribute_group *smb_attr_groups[] = {
+	&smb_otg_attr_group,
+	NULL,
+};
+
+static int smb_otg_set_boost(struct smb_chip *chip, bool on)
+{
+	int rc;
+
+	rc = regmap_update_bits(chip->regmap, DCDC_CMD_OTG_REG,
+				OTG_EN_BIT, on ? OTG_EN_BIT : 0);
+	if (rc < 0) {
+	dev_err(chip->dev, "Could not change OTG boost rc=%d\n", rc);
+		return rc;
+	}
+
+	chip->otg_boost_on = on;
+	dev_dbg(chip->dev, "OTG boost %s\n", on ? "ON" : "OFF");
+	return 0;
+}
+
+static void smb_otg_dump_regs(struct smb_chip *chip, const char *why)
+{
+	unsigned int v30d = 0, v30e = 0, v50f = 0;
+
+	regmap_read(chip->regmap, chip->base + TYPE_C_STATUS_3, &v30d);
+	regmap_read(chip->regmap, chip->base + TYPE_C_STATUS_4, &v30e);
+	regmap_read(chip->regmap, 0x150F, &v50f);
+	dev_info(chip->dev, "OTG regs %s: 130D=0x%x 130E=0x%x 150F=0x%x\n",
+		 why, v30d, v30e, v50f);
+}
+
+static void smb_otg_detect_work(struct work_struct *work)
+{
+	struct smb_chip *chip;
+	unsigned int stat = 0, stat4 = 0, v50f = 0;
+	bool cable;
+	int rc;
+
+	chip = container_of(work, struct smb_chip, otg_detect_work.work);
+
+	rc = regmap_read(chip->regmap, chip->base + TYPE_C_STATUS_3, &stat);
+	if (rc < 0) {
+		dev_err(chip->dev, "Could not read U_USB status rc=%d\n", rc);
+		goto resched;
+	}
+	regmap_read(chip->regmap, chip->base + TYPE_C_STATUS_4, &stat4);
+	regmap_read(chip->regmap, 0x150F, &v50f);
+
+	/* An OTG accessory pulls CC down with Rd, while a plain PC
+	 * connection must never trigger the boost. DFP_RA_RA alone
+	 * also shows with a PC cable attached, so only Rd states
+	 * count here. */
+	cable = !!(stat4 & (DFP_RD_RD_BIT | DFP_RD_RA_VCONN_BIT)) ||
+		!!(v50f & U_USB_GND_NOVBUS_BIT);
+	if (cable != chip->otg_last_cable) {
+		chip->otg_last_cable = cable;
+		chip->otg_force = false;
+		smb_otg_dump_regs(chip, cable ? "attached" : "detached");
+	}
+
+	if (!chip->otg_force && cable != chip->otg_boost_on)
+		smb_otg_set_boost(chip, cable);
+
+resched:
+	schedule_delayed_work(&chip->otg_detect_work,
+			      msecs_to_jiffies(OTG_DETECT_POLL_MS));
+}
+
 static int smb_init_hw(struct smb_chip *chip)
 {
 	int rc, i;
@@ -1097,6 +1260,18 @@ static int smb_probe(struct platform_device *pdev)
 	if (rc < 0)
 		return dev_err_probe(chip->dev, rc, "Couldn't set vbat max\n");
 
+	chip->otg_last_cable = -1;
+	chip->otg_force = false;
+	chip->otg_boost_on = false;
+
+	regmap_update_bits(chip->regmap, DCDC_CMD_OTG_REG, OTG_EN_BIT, 0);
+
+	rc = devm_delayed_work_autocancel(chip->dev, &chip->otg_detect_work,
+					  smb_otg_detect_work);
+	if (rc)
+		return dev_err_probe(chip->dev, rc,
+				     "Failed to init OTG detect work\n");
+
 	rc = smb_init_irq(chip, &irq, "bat-ov", smb_handle_batt_overvoltage);
 	if (rc < 0)
 		return rc;
@@ -1124,6 +1299,7 @@ static int smb_probe(struct platform_device *pdev)
 
 	/* Initialise charger state */
 	schedule_delayed_work(&chip->status_change_work, 0);
+	schedule_delayed_work(&chip->otg_detect_work, 0);
 
 	return 0;
 }
@@ -1140,6 +1316,7 @@ static struct platform_driver qcom_spmi_smb = {
 	.driver = {
 		.name = "qcom-smbx-charger",
 		.of_match_table = smb_match_id_table,
+		.dev_groups = smb_attr_groups,
 		},
 };
 
