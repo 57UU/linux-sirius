@@ -285,6 +285,7 @@
 
 	battery: battery {
 		compatible = "simple-battery";
+		charge-full-design-microamp-hours = <3120000>;
 		voltage-min-design-microvolt = <3312000>;
 		voltage-max-design-microvolt = <4400000>;
 	};
