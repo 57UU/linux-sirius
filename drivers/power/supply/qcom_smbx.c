@@ -1126,6 +1126,22 @@ static void smb_otg_detect_work(struct work_struct *work)
 		chip->otg_last_cable = cable;
 		chip->otg_force = false;
 		smb_otg_dump_regs(chip, cable ? "attached" : "detached");
+		/*
+		 * Wake userspace role-follow (udev): the otg_cable sysfs
+		 * attribute just flipped. Poll cue for poll()-based
+		 * watchers plus a CHANGE uevent carrying OTG_CABLE so a
+		 * platform change rule can match it precisely.
+		 */
+		sysfs_notify(&chip->dev->kobj, NULL, "otg_cable");
+		{
+			char otg_cable_env[16];
+			char *otg_envp[] = { otg_cable_env, NULL };
+
+			snprintf(otg_cable_env, sizeof(otg_cable_env),
+				 "OTG_CABLE=%d", cable);
+			kobject_uevent_env(&chip->dev->kobj, KOBJ_CHANGE,
+					   otg_envp);
+		}
 	}
 
 	if (!chip->otg_force) {
