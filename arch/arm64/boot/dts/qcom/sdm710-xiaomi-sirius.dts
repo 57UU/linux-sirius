@@ -571,9 +571,9 @@
 			regulator-enable-ramp-delay = <250>;
 		};
 
-		vreg_l5b_2p95: ldo5 {
-			regulator-min-microvolt = <2960000>;
-			regulator-max-microvolt = <2960000>;
+		vreg_l5b_1p8: ldo5 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
 			regulator-enable-ramp-delay = <250>;
 		};
 
@@ -1123,10 +1123,12 @@
 	status = "okay";
 
 	vmmc-supply = <&vreg_l8b_3p3>;
-	vqmmc-supply = <&vreg_l5b_2p95>;
+	vqmmc-supply = <&vreg_l5b_1p8>;
 
 	bus-width = <8>;
 	non-removable;
+
+	mmc-hs400-1_8v;
 };
 
 /* Global Clock Controller */
