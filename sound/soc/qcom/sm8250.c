@@ -4,6 +4,7 @@
 #include <dt-bindings/sound/qcom,q6afe.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/string.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 #include <sound/pcm.h>
@@ -89,6 +90,13 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
 			MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
 		snd_soc_dai_set_fmt(cpu_dai, fmt);
 		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
+		/* sirius TAS2557 (tas2552-compat) on PRIM MI2S has no MCLK pin,
+		 * clock its PLL from BCLK (clk_id 2); without this hw_params
+		 * fails with -EINVAL and the speaker stays silent. */
+		if (strstr(codec_dai->name, "tas255"))
+			snd_soc_dai_set_sysclk(codec_dai, 2,
+					       MI2S_BCLK_RATE,
+					       SNDRV_PCM_STREAM_PLAYBACK);
 		break;
 	case SECONDARY_MI2S_RX:
 		codec_dai_fmt |= SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_I2S;
@@ -139,7 +147,17 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
 
 		for_each_rtd_codec_dais(rtd, i, codec_dai) {
 			snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
-			snd_soc_dai_set_sysclk(codec_dai, 0,
+			/*
+			 * sirius TAS2557 (tas2552-compat): the amp has no MCLK pin,
+			 * so clock its PLL from BCLK (clk_id 2) instead of MCLK (0).
+			 * With MCLK the PLL never locks and the speaker stays silent.
+			 */
+			if (strstr(codec_dai->name, "tas255"))
+				snd_soc_dai_set_sysclk(codec_dai, 2,
+					       TDM_BCLK_RATE,
+					       SNDRV_PCM_STREAM_PLAYBACK);
+			else
+				snd_soc_dai_set_sysclk(codec_dai, 0,
 					       TDM_BCLK_RATE,
 					       SNDRV_PCM_STREAM_PLAYBACK);
 			snd_soc_component_set_sysclk(codec_dai->component,

@@ -2173,6 +2173,13 @@ config SND_SOC_TAS2552
 	tristate "Texas Instruments TAS2552 Mono Audio amplifier"
 	depends on I2C
 
+config SND_SOC_TAS2557
+	tristate "Texas Instruments TAS2557 SmartAmp (sirius mainline glue)"
+	depends on I2C
+	help
+	  TAS2557 SmartAmp driver for Xiaomi MI 8 SE (sirius): DSP program
+	  and tuning are loaded from tas2557_uCDSP_aac/goer.bin firmware.
+
 config SND_SOC_TAS2562
 	tristate "Texas Instruments TAS2562 Mono Audio amplifier"
 	depends on I2C

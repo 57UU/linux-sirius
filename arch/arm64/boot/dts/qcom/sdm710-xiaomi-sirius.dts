@@ -156,7 +156,7 @@
 
 	// AUDIO: WIP
 	sound: sound {
-		compatible = "qcom,sdm660-internal-sndcard";
+		compatible = "qcom,sdm660-sndcard";
 		model = "Xiaomi Mi 8 SE";
 
 		pinctrl-names = "default";
@@ -168,8 +168,7 @@
 			"Analog PDM_RX2", "Digital PDM_RX2",
 			"Analog PDM_RX3", "Digital PDM_RX3",
 			"Digital LPASS_PDM_TX", "Analog PDM_TX",
-			"Analog AMIC2", "Analog MIC BIAS External2",
-			"Stereo1 DMIC Mux", "Analog MIC BIAS Internal1";
+			"Analog AMIC2", "Analog MIC BIAS External2";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
@@ -208,6 +207,24 @@
 
 			cpu {
 				sound-dai = <&q6voicedai VOICEMMODE1>;
+			};
+		};
+
+		/* Stock routes the speaker amp (TAS2557) over PRIM MI2S
+		 * (rx-lines = 3); SEC MI2S pins are not muxed on sirius. */
+		pri-mi2s-rx-link {
+			link-name = "Primary MI2S Playback";
+
+			cpu {
+				sound-dai = <&q6afedai PRIMARY_MI2S_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&spk_amp 0>;
 			};
 		};
 
@@ -668,10 +685,15 @@
 		reg = <0x4c>;
 		#sound-dai-cells = <1>;
 
-		interrupts-extended = <&tlmm 96 IRQ_TYPE_EDGE_FALLING>;
-		shutdown-gpios = <&tlmm 95 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tas2557_default>;
 
-		vdd-supply = <&vreg_l13a_1p8>;
+		interrupts-extended = <&tlmm 96 IRQ_TYPE_EDGE_FALLING>;
+		enable-gpios = <&tlmm 95 GPIO_ACTIVE_HIGH>;
+
+		vbat-supply = <&vph_pwr>;
+		iovdd-supply = <&vreg_l13a_1p8>;
+		avdd-supply = <&vreg_l13a_1p8>;
 	};
 };
 
@@ -977,9 +999,12 @@
 	status = "okay";
 };
 
-//&lpi_tlmm {
-//	status = "okay";
-//};
+/* LPI pinctrl must be on: cdc_pdm_default (used by sound) lives here.
+ * gpio-reserved-ranges protects sensor GPIOs, same as sargo. */
+&lpi_tlmm {
+	gpio-reserved-ranges = <0 8>, <12 6>;
+	status = "okay";
+};
 
 &q6afedai {
 	dai@19 {
@@ -1002,6 +1027,11 @@
 		qcom,tdm-invert-sync = <0>;
 		qcom,tdm-data-delay = <1>;
 		qcom,tdm-data-align = <0>;
+	};
+
+	dai@16 {
+		reg = <PRIMARY_MI2S_RX>;
+		qcom,sd-lines = <2>;
 	};
 
 	dai@81 {
@@ -1034,7 +1064,7 @@
 };
 
 &q6core {
-		qcom,acdb-name = "qcom/sdm710/pyxis/Global_cal.acdb";
+		qcom,acdb-name = "qcom/sdm710/sirius/Forte_Global_cal.acdb";
 };
 
 &q6voicedai {
@@ -1068,6 +1098,7 @@
 &pm660l_flash {
 	status = "okay";
 
+	/* Rear dual flash */
 	led-0 {
 		function = LED_FUNCTION_FLASH;
 		color = <LED_COLOR_ID_WHITE>;
@@ -1075,6 +1106,37 @@
 		led-max-microamp = <350000>;
 		flash-max-microamp = <1000000>;
 		flash-max-timeout-us = <1280000>;
+	};
+
+	/* Front fill LED (selfie flash) on PM660L flash channel 3.
+	 * Downstream also drives SoC GPIO_21 (flash_led3_front_en) as the
+	 * front-flash enable; there is no mainline binding for it, so if
+	 * this LED does not light on HW, GPIO_21 is the first suspect. */
+	led-1 {
+		function = LED_FUNCTION_FLASH;
+		function-enumerator = <1>;
+		color = <LED_COLOR_ID_WHITE>;
+		led-sources = <3>;
+		led-max-microamp = <100000>;
+		flash-max-microamp = <1000000>;
+		flash-max-timeout-us = <1280000>;
+	};
+};
+
+/* White notification/breathing LED on PM660L LPG channel 3 (0xb300).
+ * Downstream only populates this channel (red renamed to "white");
+ * green/blue (channels 2/1) are disabled on sirius. */
+&pm660l_lpg {
+	qcom,power-source = <1>;
+	status = "okay";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	led@3 {
+		reg = <3>;
+		color = <LED_COLOR_ID_WHITE>;
+		function = LED_FUNCTION_INDICATOR;
 	};
 };
 
