@@ -524,7 +524,7 @@ static int qca_tlv_send_segment(struct hci_dev *hdev, int seg_size,
 	edl = (struct edl_event_hdr *)(skb->data);
 
 	if (edl->cresp != EDL_CMD_REQ_RES_EVT || edl->rtype != rtype) {
-		bt_dev_err(hdev, "QCA TLV with error stat 0x%x rtype 0x%x",
+		bt_dev_dbg(hdev, "QCA TLV with error stat 0x%x rtype 0x%x",
 			   edl->cresp, edl->rtype);
 		err = -EIO;
 	}
@@ -534,7 +534,7 @@ static int qca_tlv_send_segment(struct hci_dev *hdev, int seg_size,
 
 	tlv_resp = (struct tlv_seg_resp *)(edl->data);
 	if (tlv_resp->result) {
-		bt_dev_err(hdev, "QCA TLV with error stat 0x%x rtype 0x%x (0x%x)",
+		bt_dev_dbg(hdev, "QCA TLV with error stat 0x%x rtype 0x%x (0x%x)",
 			   edl->cresp, edl->rtype, tlv_resp->result);
 	}
 
