@@ -3198,6 +3198,7 @@ skip_search:
 		route->connected);
 err:
 	if (ret)
+		dev_err(dev, "ASoC: SIRIUS-DBG route fail src=%s sink=%s ret=%d\n", route->source, route->sink, ret);
 		dev_err(dev, "ASoC: Failed to add route %s%s -%s%s%s> %s%s\n",
 			source, !wsource ? "(*)" : "",
 			!route->control ? "" : "> [",

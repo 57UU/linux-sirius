@@ -2173,6 +2173,15 @@ config SND_SOC_TAS2552
 	tristate "Texas Instruments TAS2552 Mono Audio amplifier"
 	depends on I2C
 
+config SND_SOC_TAS2557
+	tristate "Texas Instruments TAS2557 smart amplifier"
+	depends on I2C
+	help
+	  Enable support for Texas Instruments TAS2557 smart amplifiers.
+	  The driver supports I2C control, the ASI1 playback DAI, and the
+	  legacy TAS2557 firmware/configuration blobs used by some mobile
+	  devices.
+
 config SND_SOC_TAS2562
 	tristate "Texas Instruments TAS2562 Mono Audio amplifier"
 	depends on I2C

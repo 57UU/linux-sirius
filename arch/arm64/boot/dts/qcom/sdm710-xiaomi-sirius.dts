@@ -160,16 +160,14 @@
 		model = "Xiaomi Mi 8 SE";
 
 		pinctrl-names = "default";
-		pinctrl-0 = <&cdc_pdm_default>,
-			/* GPIO 26 used by tp_vddio_vreg, not DMIC on sirius */
-			<&pri_tdm_default>;
+		/* cdc_pdm_default needs gpio18-20 (slimbus), taken by camera CCI on sirius; speaker/headset via TDM+tas2552 do not need it */
+		pinctrl-0 = <&pri_tdm_default>;
 
 		audio-routing = "Analog PDM_RX1", "Digital PDM_RX1",
 			"Analog PDM_RX2", "Digital PDM_RX2",
 			"Analog PDM_RX3", "Digital PDM_RX3",
 			"Digital LPASS_PDM_TX", "Analog PDM_TX",
-			"Analog AMIC2", "Analog MIC BIAS External2",
-			"Stereo1 DMIC Mux", "Analog MIC BIAS Internal1";
+			"Analog AMIC2", "Analog MIC BIAS External2";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
@@ -216,6 +214,22 @@
 
 			cpu {
 				sound-dai = <&q6afedai PRIMARY_TDM_TX_0>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&spk_amp 0>;
+			};
+		};
+
+		pri-mi2s-rx-link {
+			link-name = "Primary MI2S Playback";
+
+			cpu {
+				sound-dai = <&q6afedai PRIMARY_MI2S_RX>;
 			};
 
 			platform {
@@ -664,14 +678,16 @@
 	clock-frequency = <400000>;
 
 	spk_amp: amplifier@4c {
-		compatible = "ti,tas2552";	/* TAS2557 is register-compatible */
+		compatible = "ti,tas2557";
 		reg = <0x4c>;
 		#sound-dai-cells = <1>;
 
-		interrupts-extended = <&tlmm 96 IRQ_TYPE_EDGE_FALLING>;
-		shutdown-gpios = <&tlmm 95 GPIO_ACTIVE_HIGH>;
+		ti,cdc-reset-gpio = <&tlmm 95 GPIO_ACTIVE_HIGH>;
+		ti,irq-gpio = <&tlmm 96 0>;
 
-		vdd-supply = <&vreg_l13a_1p8>;
+		vbat-supply = <&vph_pwr>;
+		iovdd-supply = <&vreg_l13a_1p8>;
+		avdd-supply = <&vreg_l13a_1p8>;
 	};
 };
 
@@ -1456,4 +1472,12 @@
 &venus {
 	status = "okay";
 	firmware-name = "qcom/sdm710/pyxis/venus.mbn";
+};
+
+/* PRI MI2S SD0 -> TAS2557 speaker amp (stock: SPEAKER on PRI_MI2S_RX) */
+&q6afedai {
+	dai@16 {
+		reg = <PRIMARY_MI2S_RX>;
+		qcom,sd-lines = <0>;
+	};
 };

@@ -1461,8 +1461,10 @@ static int soc_probe_component(struct snd_soc_card *card,
 	}
 
 	ret = snd_soc_component_module_get_when_probe(component);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ASoC: SIRIUS-DBG modget fail %s ret=%d\n", component->name, ret);
 		return ret;
+	}
 
 	component->card = card;
 	soc_set_name_prefix(card, component);
@@ -1491,8 +1493,10 @@ static int soc_probe_component(struct snd_soc_card *card,
 	}
 
 	ret = snd_soc_component_probe(component);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ASoC: SIRIUS-DBG comp-probe fail %s ret=%d\n", component->name, ret);
 		goto err_probe;
+	}
 
 	WARN(!snd_soc_dapm_get_idle_bias(dapm) &&
 	     snd_soc_dapm_get_bias_level(dapm) != SND_SOC_BIAS_OFF,
@@ -1506,20 +1510,26 @@ static int soc_probe_component(struct snd_soc_card *card,
 	 *	snd_soc_component_set_aux()
 	 */
 	ret = snd_soc_component_init(component);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ASoC: SIRIUS-DBG comp-init fail %s ret=%d\n", component->name, ret);
 		goto err_probe;
+	}
 
 	ret = snd_soc_add_component_controls(component,
 					     component->driver->controls,
 					     component->driver->num_controls);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ASoC: SIRIUS-DBG add-controls fail %s ret=%d\n", component->name, ret);
 		goto err_probe;
+	}
 
 	ret = snd_soc_dapm_add_routes(dapm,
 				      component->driver->dapm_routes,
 				      component->driver->num_dapm_routes);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ASoC: SIRIUS-DBG add-routes fail %s ret=%d\n", component->name, ret);
 		goto err_probe;
+	}
 
 	/* see for_each_card_components */
 	list_add(&component->card_list, &card->component_dev_list);
@@ -2021,6 +2031,7 @@ static int snd_soc_bind_card(struct snd_soc_card *card)
 
 	/* bind aux_devs too */
 	ret = soc_bind_aux_dev(card);
+	pr_err("ASoC: SIRIUS-DBG bind_aux ret=%d num_links=%d\n", ret, card->num_links);
 	if (ret < 0)
 		goto probe_end;
 
@@ -2101,13 +2112,17 @@ static int snd_soc_bind_card(struct snd_soc_card *card)
 
 	ret = snd_soc_dapm_add_routes(dapm, card->dapm_routes,
 				      card->num_dapm_routes);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ASoC: SIRIUS-DBG card-routes fail\n");
 		goto probe_end;
+	}
 
 	ret = snd_soc_dapm_add_routes(dapm, card->of_dapm_routes,
 				      card->num_of_dapm_routes);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("ASoC: SIRIUS-DBG of-routes fail\n");
 		goto probe_end;
+	}
 
 	/* try to set some sane longname if DMI is available */
 	snd_soc_set_dmi_name(card);
@@ -2169,7 +2184,9 @@ static int snd_soc_bind_card(struct snd_soc_card *card)
 	}
 	snd_soc_card_fixup_controls(card);
 
+	pr_err("ASoC: SIRIUS-DBG pre-card_register\n");
 	ret = snd_card_register(card->snd_card);
+	pr_err("ASoC: SIRIUS-DBG post-card_register ret=%d\n", ret);
 	if (ret < 0) {
 		dev_err(card->dev, "ASoC: failed to register soundcard %d\n",
 				ret);
@@ -3493,6 +3510,9 @@ int snd_soc_get_dlc(const struct of_phandle_args *args, struct snd_soc_dai_link_
 
 	if (ret == 0)
 		dlc->of_node = args->np;
+	else
+		pr_err("ASoC: SIRIUS-DBG no DLC match for %pOF args_count=%d\n",
+			 args->np, args->args_count);
 
 	return ret;
 }
