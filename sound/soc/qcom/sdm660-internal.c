@@ -238,7 +238,9 @@ static int sdm660_int_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	struct snd_mask *fmt = hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT);
 
 	rate->min = rate->max = DEFAULT_SAMPLE_RATE_48K;
-	channels->min = channels->max = 2;
+	/* playback stays stereo; capture (3-mic array) may ask 3-4ch, let it through */
+	if (channels->max <= 2)
+		channels->min = channels->max = 2;
 	snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S16_LE);
 
 	return 0;
