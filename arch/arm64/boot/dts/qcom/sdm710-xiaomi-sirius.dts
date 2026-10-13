@@ -1481,3 +1481,35 @@
 		qcom,sd-lines = <0>;
 	};
 };
+/* Sirius LEDs, cf. downstream sirius-sdm710.dtsi +
+ * sirius-sdm670-camera-sensor.dtsi:
+ *  - rear dual flash  = PM660L flash strings 1+2 (ganged as led-0)
+ *  - front fill light = PM660L flash string 3 (downstream flash2/torch2)
+ *  - notification     = PM660L LPG channel 3 (downstream red_led/"white")
+ */
+&pm660l_flash {
+	/* Front fill light (single string, downstream pm660l_flash2) */
+	led-1 {
+		function = LED_FUNCTION_FLASH;
+		color = <LED_COLOR_ID_WHITE>;
+		function-enumerator = <1>;
+		led-sources = <3>;
+		led-max-microamp = <100000>;
+		flash-max-microamp = <1500000>;
+		flash-max-timeout-us = <1280000>;
+	};
+};
+
+&pm660l_lpg {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	qcom,power-source = <1>;
+	status = "okay";
+
+	/* Notification light: single white LED on LPG channel 3 */
+	led@3 {
+		reg = <3>;
+		color = <LED_COLOR_ID_WHITE>;
+		function = LED_FUNCTION_STATUS;
+	};
+};
