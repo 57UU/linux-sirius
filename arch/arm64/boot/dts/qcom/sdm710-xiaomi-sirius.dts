@@ -75,9 +75,10 @@
 			no-map;
 		};
 
-		// Looks like this is needed to avoid random crashes...
+		// 2026-10-15: old range 85fc0000-8ab00000 overlapped aop-mem + aop-cmd-db
+		// (sdm670.dtsi, still no-map there) -> dmesg OVERLAP DETECTED. End kept 8ab00000.
 		removed_region: removed-region {
-			reg = <0 0x85fc0000 0 0x4b40000>;
+			reg = <0 0x88f00000 0 0x1c00000>;
 			no-map;
 		};
 
@@ -1095,7 +1096,7 @@
 };
 
 &pm660l_gpios {
-	cam_wide_vdd_ldo_pin: cam-rear-state {
+	cam_wide_vdd_ldo_pin: cam-wide-vdd-state {
 		pins = "gpio2";
 		function = "normal";
 		power-source = <PM8941_GPIO_VPH>;
