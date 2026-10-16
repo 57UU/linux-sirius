@@ -996,9 +996,9 @@
 	status = "okay";
 };
 
-//&lpi_tlmm {
-//	status = "okay";
-//};
+&lpi_tlmm {
+	status = "okay";
+};
 
 &q6afedai {
 	dai@19 {
