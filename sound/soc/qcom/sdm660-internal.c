@@ -105,7 +105,7 @@ static int snd_sdm660_int_startup(struct snd_pcm_substream *stream)
 		if (data->int3_mi2s_clk_count == 1)
 			snd_soc_dai_set_sysclk(cpu,
 				Q6AFE_LPASS_CLK_ID_INT3_MI2S_IBIT,
-				MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
+				MI2S_BCLK_RATE, SNDRV_PCM_STREAM_CAPTURE);
 
 		/*
 		 * Downstream specifies that the AFE is a clock consumer, but
@@ -163,7 +163,7 @@ static void snd_sdm660_int_shutdown(struct snd_pcm_substream *stream)
 		if (data->int3_mi2s_clk_count == 0)
 			snd_soc_dai_set_sysclk(cpu,
 				Q6AFE_LPASS_CLK_ID_INT3_MI2S_IBIT,
-				0, SNDRV_PCM_STREAM_PLAYBACK);
+				0, SNDRV_PCM_STREAM_CAPTURE);
 
 		break;
 	default:
@@ -239,7 +239,7 @@ static int sdm660_int_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 
 	rate->min = rate->max = DEFAULT_SAMPLE_RATE_48K;
 	/* playback stays stereo; capture (3-mic array) may ask 3-4ch, let it through */
-	if (channels->max <= 2)
+	if (channels->max == 2)
 		channels->min = channels->max = 2;
 	snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S16_LE);
 
