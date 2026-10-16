@@ -168,7 +168,9 @@
 			"Analog PDM_RX2", "Digital PDM_RX2",
 			"Analog PDM_RX3", "Digital PDM_RX3",
 			"Digital LPASS_PDM_TX", "Analog PDM_TX",
-			"Analog AMIC2", "Analog MIC BIAS External2";
+			"Analog AMIC1", "Analog MIC BIAS External1",
+			"Analog AMIC2", "Analog MIC BIAS External2",
+			"Analog AMIC3", "Analog MIC BIAS External1";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
