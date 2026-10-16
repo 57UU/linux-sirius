@@ -1275,7 +1275,11 @@ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
 		goto bail;
 
 	if (kernel) {
-		if (!wait_for_completion_timeout(&ctx->work, 10 * HZ))
+		unsigned long timeout = 10 * HZ;
+		/* Process-exit DSP release is best effort (caller ignores the return value). A deaf DSP stalls every exiting process for the full 10s (measured: each adsprpcd stop costs 10.3s at shutdown); bound the release path so shutdown does not serialize on it. */
+		if (sc == FASTRPC_SCALARS(FASTRPC_RMID_INIT_RELEASE, 1, 0))
+			timeout = 2 * HZ;
+		if (!wait_for_completion_timeout(&ctx->work, timeout))
 			err = -ETIMEDOUT;
 	} else {
 		err = wait_for_completion_interruptible(&ctx->work);
