@@ -317,6 +317,8 @@ static void snd_sdm660_int_add_ops(struct snd_soc_card *card)
 }
 
 static const struct snd_soc_dapm_widget snd_sdm660_int_dapm_widgets[] = {
+	SND_SOC_DAPM_MIC("Digital Mic1", NULL),
+	SND_SOC_DAPM_MIC("Digital Mic2", NULL),
 };
 
 static int snd_sdm660_int_probe(struct platform_device *pdev)
