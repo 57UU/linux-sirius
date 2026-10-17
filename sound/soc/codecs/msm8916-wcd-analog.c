@@ -607,11 +607,16 @@ static int pm8916_wcd_analog_enable_adc(struct snd_soc_dapm_widget *w,
 		 */
 		usleep_range(12000, 12010);
 		snd_soc_component_update_bits(component, adc_reg, 1 << init_bit_shift, 0x00);
-		dev_info(component->dev, "SIRIUS-MICDBG adc %s tx1_en=%02x conn_tx1=%08x micb1_en=%02x",
+		dev_info(component->dev, "SIRIUS-MICDBG adc %s tx1_en=%02x conn_tx1=%08x micb1_en=%02x micb1_val=%02x mastbias=%02x anaclk=%02x digclk=%02x opamp=%02x",
 			w->name,
 			snd_soc_component_read(component, CDC_A_TX_1_EN),
 			snd_soc_component_read(component, CDC_D_CDC_CONN_TX1_CTL),
-			snd_soc_component_read(component, CDC_A_MICB_1_EN));
+			snd_soc_component_read(component, CDC_A_MICB_1_EN),
+			snd_soc_component_read(component, CDC_A_MICB_1_VAL),
+			snd_soc_component_read(component, CDC_A_MASTER_BIAS_CTL),
+			snd_soc_component_read(component, CDC_D_CDC_ANA_CLK_CTL),
+			snd_soc_component_read(component, CDC_D_CDC_DIG_CLK_CTL),
+			snd_soc_component_read(component, CDC_A_TX_1_2_OPAMP_BIAS));
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		switch (w->reg) {
