@@ -494,7 +494,18 @@ static int qcom_fg_get_capacity(struct qcom_fg_chip *chip, int *val)
 		cap[0] = cap[0] < cap[1] ? cap[0] : cap[1];
 	}
 
-	*val = DIV_ROUND_CLOSEST((cap[0] - 1) * 98, 0xff - 2) + 1;
+	/*
+	 * BATT_MONOTONIC_SOC reports the remaining charge on a 0..255 scale
+	 * where 255 means full.  Scale it linearly onto 1..100 so that a full
+	 * pack really reports 100%: the old (x - 1) * 98 / 253 + 1 mapping
+	 * saturated at 99, which also made the "capacity == 100" check in
+	 * qcom_fg_get_property() unreachable.
+	 */
+	*val = DIV_ROUND_CLOSEST(cap[0] * 100, 0xff);
+	if (*val < 1)
+		*val = 1;
+	else if (*val > 100)
+		*val = 100;
 
 	return 0;
 }
