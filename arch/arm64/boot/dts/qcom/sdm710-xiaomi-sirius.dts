@@ -1066,6 +1066,8 @@
 	monitored-battery = <&battery>;
 	/* TCPM owns the USB input current limit (PD contract / Rp) */
 	qcom,typec-managed-icl;
+	/* ... and the OTG boost bit, driven through tcpc->set_vbus() */
+	qcom,typec-managed-vbus;
 	status = "okay";
 };
 

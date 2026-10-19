@@ -100,6 +100,9 @@
 /* Sampling attempts used to pick up a cable that is attached at probe time */
 #define SMB2_KICK_TRIES			6
 #define SMB2_KICK_MS			400
+/* keep DCDC_CMD_OTG set while the charger's own state machine settles */
+#define SMB2_VBUS_HOLD_TRIES		20
+#define SMB2_VBUS_HOLD_MS		500
 
 /* Input current limit: 25 mA per LSB, same unit the charger driver uses */
 #define SMB2_ICL_STEP_UA		25000
@@ -120,6 +123,7 @@ struct smb2_typec {
 	struct regmap		*regmap;
 	unsigned int		base;
 	unsigned int		kick_cnt;
+	unsigned int		vbus_hold_cnt;
 	int			irq;
 	struct tcpm_port	*tcpm_port;
 	struct delayed_work	probe_kick;
@@ -473,6 +477,7 @@ static int smb2_typec_set_vbus(struct tcpc_dev *tcpc, bool on, bool charge)
 		return ret;
 
 	chip->vbus_on = on;
+	chip->vbus_hold_cnt = 0;
 	if (chip->tcpm_port)
 		schedule_delayed_work(&chip->vbus_kick, msecs_to_jiffies(50));
 
@@ -502,14 +507,42 @@ static void smb2_typec_vbus_kick(struct work_struct *work)
 {
 	struct smb2_typec *chip = container_of(work, struct smb2_typec,
 					       vbus_kick.work);
+	unsigned int cur;
+	int ret;
 
 	/*
 	 * TCPM only learns about VBUS edges through this callback, and the
 	 * edge it cares about happens inside tcpm_src_attach(), right before
 	 * the port would otherwise fall back to SRC_UNATTACHED.
 	 */
-	tcpm_vbus_change(chip->tcpm_port);
-	tcpm_cc_change(chip->tcpm_port);
+	if (chip->vbus_hold_cnt == 0) {
+		tcpm_vbus_change(chip->tcpm_port);
+		tcpm_cc_change(chip->tcpm_port);
+	}
+	chip->vbus_hold_cnt++;
+
+	/*
+	 * The PMIC drops DCDC_CMD_OTG by itself a moment after the port
+	 * attaches: the boost output shows up on USBIN, the charger treats
+	 * it as a new input and its state machine re-initialises the DCDC
+	 * block, clearing the enable.  TCPM only stays in SRC_ATTACHED if it
+	 * sees VBUS come up within 480 ms, so a silently lost enable turns
+	 * into an endless attach/detach loop (and a dead xHCI afterwards).
+	 * Re-assert the bit for a few seconds until the charger settles.
+	 */
+	if (chip->vbus_on) {
+		ret = regmap_read(chip->regmap, SMB2_DCDC_CMD_OTG, &cur);
+		if (!ret && !(cur & SMB2_OTG_EN)) {
+			regmap_update_bits(chip->regmap, SMB2_DCDC_CMD_OTG,
+					   SMB2_OTG_EN, SMB2_OTG_EN);
+			dev_dbg(chip->dev,
+				"OTG boost was cleared, re-asserted\n");
+		}
+
+		if (chip->vbus_hold_cnt < SMB2_VBUS_HOLD_TRIES)
+			schedule_delayed_work(&chip->vbus_kick,
+					      msecs_to_jiffies(SMB2_VBUS_HOLD_MS));
+	}
 }
 
 static void smb2_typec_detach_check(struct work_struct *work)

@@ -429,6 +429,7 @@ struct smb_chip {
 	bool otg_boost_on;
 	bool otg_force;
 	int otg_last_cable;
+	bool typec_managed_vbus;
 	bool wakeup_enabled;
 	bool typec_managed_icl;
 
@@ -1257,7 +1258,14 @@ static void smb_otg_detect_work(struct work_struct *work)
 		}
 	}
 
-	if (!chip->otg_force) {
+	/*
+	 * With a Type-C port controller in charge, VBUS is driven by the
+	 * TCPM through tcpc->set_vbus().  The legacy GPIO-ID heuristic must
+	 * not touch the boost bit then: it cannot see the Rd on a Type-C
+	 * OTG adapter, so it keeps switching the supply off underneath
+	 * TCPM, which then sees VBUS drop and detaches again.
+	 */
+	if (!chip->otg_force && !chip->typec_managed_vbus) {
 		if (!chip->otg_boost_on && cable && !vbus)
 			smb_otg_set_boost(chip, true);
 		else if (chip->otg_boost_on && !cable)
@@ -1343,6 +1351,8 @@ static int smb_probe(struct platform_device *pdev)
 	 */
 	chip->typec_managed_icl = device_property_read_bool(chip->dev,
 							    "qcom,typec-managed-icl");
+	chip->typec_managed_vbus = device_property_read_bool(chip->dev,
+							     "qcom,typec-managed-vbus");
 
 	chip->usb_in_v_chan = devm_iio_channel_get(chip->dev, "usbin_v");
 	if (IS_ERR(chip->usb_in_v_chan))
