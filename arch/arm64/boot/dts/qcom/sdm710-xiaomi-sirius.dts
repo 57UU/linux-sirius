@@ -16,6 +16,7 @@
 #include <dt-bindings/sound/qcom,q6afe.h>
 #include <dt-bindings/sound/qcom,q6asm.h>
 #include <dt-bindings/sound/qcom,q6voice.h>
+#include <dt-bindings/usb/pd.h>
 #include "sdm710.dtsi"
 #include "pm660.dtsi"
 #include "pm660l.dtsi"
@@ -1063,6 +1064,8 @@
 /* PMIC */
 &pm660_charger {
 	monitored-battery = <&battery>;
+	/* TCPM owns the USB input current limit (PD contract / Rp) */
+	qcom,typec-managed-icl;
 	status = "okay";
 };
 
@@ -1408,13 +1411,31 @@
 
 &usb_1_dwc3 {
 	dr_mode = "otg";
-	extcon = <&extcon_usb>;
+	/*
+	 * Role is driven by the Type-C port (PM660 Type-C block + TCPM)
+	 * through the USB role switch; the legacy ID-pin extcon is no
+	 * longer used for the role decision.
+	 */
+	usb-role-switch;
+	role-switch-default-mode = "peripheral";
 	phys = <&usb_1_hsphy>;
 	phy-names = "usb2-phy";
 	maximum-speed = "high-speed";
 
 	/delete-property/ snps,dis_u2_susphy_quirk;
 	/delete-property/ snps,dis_enblslpm_quirk;
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+
+			usb_1_dwc3_hs_out: endpoint {
+			};
+		};
+	};
 };
 
 &usb_1_hsphy {
@@ -1438,6 +1459,56 @@
 	qcom,preemphasis-width = <1>;		/* half-bit */
 };
 
+/*
+ * Type-C: the PM660 charger's CC state machine is driven by the generic
+ * Type-C Port Controller Manager, which also owns the role switch and the
+ * PD PHY.  Sink capabilities mirror the vendor "default-sink-caps" table.
+ */
+&pm660_typec {
+	status = "okay";
+
+	vdd-pdphy-supply = <&vreg_l7b_3p125>;
+
+	connector {
+		compatible = "usb-c-connector";
+		label = "USB-C";
+		power-role = "dual";
+		data-role = "dual";
+		try-power-role = "sink";
+
+		/*
+		 * A DRP port must advertise both directions; TCPM refuses to
+		 * register otherwise.  5 V/1.5 A matches what the SMB2 boost
+		 * can reasonably deliver through a plain OTG adapter.
+		 */
+		source-pdos = <PDO_FIXED(5000, 1500,
+					 PDO_FIXED_DUAL_ROLE |
+					 PDO_FIXED_USB_COMM |
+					 PDO_FIXED_DATA_SWAP)>;
+		sink-pdos = <PDO_FIXED(5000, 3000,
+				       PDO_FIXED_DUAL_ROLE |
+				       PDO_FIXED_USB_COMM)
+			     PDO_FIXED(9000, 2000,
+				       PDO_FIXED_DUAL_ROLE |
+				       PDO_FIXED_USB_COMM)>;
+		op-sink-microwatt = <15000000>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+
+				pm660_typec_hs: endpoint {
+					remote-endpoint = <&usb_1_dwc3_hs_out>;
+				};
+			};
+		};
+	};
+};
+
+/* Remote-USB-ID extcon is kept for userspace compatibility only */
 /* Remoteproc etc. */
 &adsp_pas {
 	status = "okay";

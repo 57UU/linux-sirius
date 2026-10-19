@@ -92,3 +92,13 @@ config TYPEC_QCOM_PMIC
 	  mode and Power Delivery support both for VBUS and VCONN.
 
 endif # TYPEC_TCPM
+
+config TYPEC_QCOM_SMB2
+	tristate "Qualcomm PM660/SMB2 USB Type-C port controller driver"
+	depends on ARCH_QCOM || COMPILE_TEST
+	help
+	  Say Y or M here to enable the Type-C port controller driver which
+	  drives the SMB2 charger block found on the Qualcomm PM660 PMIC.
+	  It hands the CC state machine over to the generic Type-C Port
+	  Controller Manager, providing role switching, orientation, VCONN
+	  and (together with the PM660 PD PHY) USB Power Delivery.

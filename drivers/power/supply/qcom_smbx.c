@@ -374,6 +374,16 @@
 #define THERMAL_FCC_MAX					3000000
 #define THERMAL_FCC_STEP				500000
 
+/*
+ * Software JEITA.  The mainline charger driver has no temperature aware
+ * charge current control and the PMIC's own JEITA block is left at its reset
+ * values, so poll the battery thermal zone and program the fast charge
+ * current ourselves.  The 'qcom-smb-charger' cooling device registered below
+ * is not bound to any thermal zone, so nothing else writes this register.
+ */
+#define SMB_JEITA_POLL_MS				30000
+#define SMB_JEITA_HYST_MC				1000	/* 1 degC */
+
 enum charger_status {
 	TRICKLE_CHARGE = 0,
 	PRE_CHARGE,
@@ -420,6 +430,11 @@ struct smb_chip {
 	bool otg_force;
 	int otg_last_cable;
 	bool wakeup_enabled;
+	bool typec_managed_icl;
+
+	struct thermal_zone_device *batt_tz;
+	struct delayed_work jeita_work;
+	int jeita_idx;
 
 	struct iio_channel *usb_in_i_chan;
 	struct iio_channel *usb_in_v_chan;
@@ -625,7 +640,12 @@ static void smb_status_change_work(struct work_struct *work)
 		break;
 	}
 
-	smb_set_current_limit(chip, current_ua);
+	if (!chip->typec_managed_icl)
+		smb_set_current_limit(chip, current_ua);
+
+	/* Re-check the battery temperature now that charging may have started */
+	mod_delayed_work(system_dfl_wq, &chip->jeita_work, 0);
+
 	power_supply_changed(chip->chg_psy);
 }
 
@@ -918,6 +938,99 @@ static const struct smb_init_register smb_init_seq[] = {
 	  .mask = FAST_CHARGE_CURRENT_SETTING_MASK,
 	  .val = THERMAL_FCC_MAX / CURRENT_SCALE_FACTOR },
 };
+
+/*
+ * Battery temperature bands: 0 .. 10 C slow charge, 10 .. 40 C full rate,
+ * then four steps down and a hard stop outside 0 .. 55 C.
+ */
+struct smb_jeita_step {
+	int min_mc;	/* inclusive lower bound of the band */
+	u32 fcc_ua;	/* 0 = stop charging */
+};
+
+static const struct smb_jeita_step smb_jeita_table[] = {
+	{     0, 1000000 },
+	{ 10000, THERMAL_FCC_MAX },
+	{ 40000, 2000000 },
+	{ 43000, 1500000 },
+	{ 46000, 1000000 },
+	{ 48000,  500000 },
+	{ 55000,       0 },
+};
+
+static int smb_jeita_pick(int temp_mc, int cur)
+{
+	int idx = -1;
+	unsigned int i;
+
+	if (temp_mc < 0)
+		return -1;
+
+	for (i = 0; i < ARRAY_SIZE(smb_jeita_table); i++) {
+		if (temp_mc >= smb_jeita_table[i].min_mc)
+			idx = (int)i;
+	}
+
+	/*
+	 * Going back up in current requires the temperature to drop a full
+	 * hysteresis below the edge of the band we are leaving, otherwise a
+	 * reading sitting on a boundary would toggle every poll.
+	 */
+	if (cur >= 0 && idx < cur &&
+	    temp_mc > smb_jeita_table[cur].min_mc - SMB_JEITA_HYST_MC)
+		idx = cur;
+
+	return idx;
+}
+
+static void smb_jeita_work(struct work_struct *work)
+{
+	struct smb_chip *chip = container_of(work, struct smb_chip,
+					     jeita_work.work);
+	int temp_mc = 0, idx, rc;
+
+	if (!chip->batt_tz) {
+		chip->batt_tz = thermal_zone_get_zone_by_name("qcom-battery");
+		if (IS_ERR(chip->batt_tz)) {
+			chip->batt_tz = NULL;
+			goto resched;
+		}
+	}
+
+	rc = thermal_zone_get_temp(chip->batt_tz, &temp_mc);
+	if (rc)
+		goto resched;
+
+	idx = smb_jeita_pick(temp_mc, chip->jeita_idx);
+	if (idx == chip->jeita_idx)
+		goto resched;
+
+	if (idx < 0 || !smb_jeita_table[idx].fcc_ua) {
+		regmap_update_bits(chip->regmap, chip->base + CHARGING_ENABLE_CMD,
+				   CHARGING_ENABLE_CMD_BIT, 0);
+		dev_info(chip->dev,
+			 "JEITA: charging stopped, battery %d mC\n", temp_mc);
+	} else {
+		if (chip->jeita_idx < 0 ||
+		    !smb_jeita_table[chip->jeita_idx].fcc_ua)
+			regmap_update_bits(chip->regmap,
+					   chip->base + CHARGING_ENABLE_CMD,
+					   CHARGING_ENABLE_CMD_BIT,
+					   CHARGING_ENABLE_CMD_BIT);
+
+		regmap_write(chip->regmap, chip->base + FAST_CHARGE_CURRENT_CFG,
+			     smb_jeita_table[idx].fcc_ua / CURRENT_SCALE_FACTOR);
+		dev_info(chip->dev,
+			 "JEITA: battery %d mC, charge current %u mA\n",
+			 temp_mc, smb_jeita_table[idx].fcc_ua / 1000);
+	}
+
+	chip->jeita_idx = idx;
+
+resched:
+	queue_delayed_work(system_dfl_wq, &chip->jeita_work,
+			   msecs_to_jiffies(SMB_JEITA_POLL_MS));
+}
 
 static int smb_thermal_get_max_state(struct thermal_cooling_device *cdev, unsigned long *max_state)
 {
@@ -1222,6 +1335,15 @@ static int smb_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, rc,
 				     "Couldn't read base address\n");
 
+	/*
+	 * When the Type-C stack is present it owns the input current limit:
+	 * TCPM knows the real contract (Rp current or PD PDO) and programs the
+	 * same register through tcpc->set_current_limit().  APSD's guess would
+	 * only fight with it, e.g. dropping a 9V/2A PD contract to 500 mA.
+	 */
+	chip->typec_managed_icl = device_property_read_bool(chip->dev,
+							    "qcom,typec-managed-icl");
+
 	chip->usb_in_v_chan = devm_iio_channel_get(chip->dev, "usbin_v");
 	if (IS_ERR(chip->usb_in_v_chan))
 		return dev_err_probe(chip->dev, PTR_ERR(chip->usb_in_v_chan),
@@ -1272,6 +1394,13 @@ static int smb_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, rc,
 				     "Failed to get battery info\n");
 
+	chip->jeita_idx = -2;
+	rc = devm_delayed_work_autocancel(chip->dev, &chip->jeita_work,
+					  smb_jeita_work);
+	if (rc)
+		return dev_err_probe(chip->dev, rc,
+				     "Failed to init JEITA work\n");
+
 	rc = devm_delayed_work_autocancel(chip->dev, &chip->status_change_work,
 					  smb_status_change_work);
 	if (rc)
@@ -1283,6 +1412,9 @@ static int smb_probe(struct platform_device *pdev)
 				FLOAT_VOLTAGE_SETTING_MASK, rc);
 	if (rc < 0)
 		return dev_err_probe(chip->dev, rc, "Couldn't set vbat max\n");
+
+	queue_delayed_work(system_dfl_wq, &chip->jeita_work,
+			   msecs_to_jiffies(5000));
 
 	chip->otg_last_cable = -1;
 	chip->otg_force = false;

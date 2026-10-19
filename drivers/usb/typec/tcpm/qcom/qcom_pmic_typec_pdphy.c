@@ -612,6 +612,7 @@ int qcom_pmic_typec_pdphy_probe(struct platform_device *pdev,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(qcom_pmic_typec_pdphy_probe);
 
 const struct pmic_typec_pdphy_resources pm8150b_pdphy_res = {
 	.irq_params = {
