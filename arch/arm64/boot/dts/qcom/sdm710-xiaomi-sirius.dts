@@ -650,7 +650,7 @@
 	status = "okay";
 
 	infrared@1 {
-		compatible = "ir-spi";
+		compatible = "ir-spi-led";
 		reg = <0x01>;
 	};
 };
