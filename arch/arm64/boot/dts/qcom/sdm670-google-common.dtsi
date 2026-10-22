@@ -1,0 +1,1581 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Device tree for Google Pixel 3a, adapted from google-blueline device tree,
+ * xiaomi-lavender device tree, and oneplus-common device tree.
+ *
+ * Copyright (c) 2022, Richard Acayan. All rights reserved.
+ */
+
+#include <dt-bindings/firmware/qcom,scm.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+#include <dt-bindings/power/qcom-rpmpd.h>
+#include <dt-bindings/sound/qcom,q6afe.h>
+#include <dt-bindings/sound/qcom,q6asm.h>
+#include <dt-bindings/sound/qcom,q6voice.h>
+#include "sdm670.dtsi"
+#include "pm660.dtsi"
+#include "pm660l.dtsi"
+#include "sdm670-google-common-dtbo-mask.dtsi"
+
+/delete-node/ &mpss_region;
+/delete-node/ &venus_mem;
+/delete-node/ &wlan_msa_mem;
+/delete-node/ &cdsp_mem;
+/delete-node/ &mba_region;
+/delete-node/ &adsp_mem;
+/delete-node/ &ipa_fw_mem;
+/delete-node/ &ipa_gsi_mem;
+/delete-node/ &gpu_mem;
+/delete-node/ &rmtfs_mem;
+
+/ {
+	chassis-type = "handset";
+
+	aliases {
+		hsuart0 = &uart6;
+		serial0 = &uart12;
+	};
+
+	battery: battery {
+		compatible = "simple-battery";
+
+		voltage-min-design-microvolt = <3312000>;
+		voltage-max-design-microvolt = <4400000>;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		framebuffer: framebuffer@9c000000 {
+			compatible = "simple-framebuffer";
+			memory-region = <&fb_mem>;
+			width = <1080>;
+			/* height is in specific device trees */
+			stride = <(1080 * 4)>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	clocks {
+		int_cdc_bclk: int-cdc-bclk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <1536000>;
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		autorepeat;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&vol_up_pin>;
+
+		key-vol-up {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&pm660l_gpios 7 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	modemsmem {
+		compatible = "google,modemsmem";
+		qcom,smem = <134>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+
+		mpss_region: mpss@8b000000 {
+			reg = <0 0x8b000000 0 0x9800000>;
+			no-map;
+		};
+
+		venus_mem: venus@94800000 {
+			reg = <0 0x94800000 0 0x500000>;
+			no-map;
+		};
+
+		wlan_msa_mem: wlan-msa@94d00000 {
+			reg = <0 0x94d00000 0 0x100000>;
+			no-map;
+		};
+
+		cdsp_mem: cdsp@94e00000 {
+			reg = <0 0x94e00000 0 0x800000>;
+			no-map;
+		};
+
+		mba_region: mba@95600000 {
+			reg = <0 0x95600000 0 0x200000>;
+			no-map;
+		};
+
+		adsp_mem: adsp@95800000 {
+			reg = <0 0x95800000 0 0x2200000>;
+			no-map;
+		};
+
+		ipa_fw_mem: ipa-fw@97a00000 {
+			reg = <0 0x97a00000 0 0x10000>;
+			no-map;
+		};
+
+		ipa_gsi_mem: ipa-gsi@97a10000 {
+			reg = <0 0x97a10000 0 0x5000>;
+			no-map;
+		};
+
+		gpu_mem: gpu@97a15000 {
+			reg = <0 0x97a15000 0 0x2000>;
+			no-map;
+		};
+
+		fb_mem: framebuffer-region@9c000000 {
+			reg = <0 0x9c000000 0 0x2400000>;
+			no-map;
+		};
+
+		/* Also includes ramoops regions */
+		debug_info_mem: debug-info@a1800000 {
+			reg = <0 0xa1800000 0 0x411000>;
+			no-map;
+		};
+
+		/*
+		 * The rmtfs_mem needs to be guarded due to "XPU limitations"
+		 * it is otherwise possible for an allocation adjacent to the
+		 * rmtfs_mem region to trigger an XPU violation, causing a
+		 * crash.
+		 */
+		rmtfs_lower_guard: rmtfs-lower-guard@fc200000 {
+			reg = <0 0xfc200000 0 0x1000>;
+			no-map;
+		};
+
+		/*
+		 * The rmtfs memory region in downstream is 'dynamically
+		 * allocated' but given the same address every time. Hard code
+		 * it as this address is where the modem firmware expects it to
+		 * be.
+		 */
+		rmtfs_mem: rmtfs-mem@fc201000 {
+			compatible = "qcom,rmtfs-mem";
+			reg = <0 0xfc201000 0 0x200000>;
+			no-map;
+
+			qcom,client-id = <1>;
+			qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>;
+		};
+
+		rmtfs_upper_guard: rmtfs-upper-guard@fc401000 {
+			reg = <0 0xfc401000 0 0x1000>;
+			no-map;
+		};
+	};
+
+	sound {
+		compatible = "qcom,sdm660-sndcard";
+		model = "Google Pixel 3a";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cdc_pdm_default>,
+			    <&cdc_dmic_default>,
+			    <&pri_tdm_default>,
+			    <&sec_tdm_default>;
+
+		audio-routing = "Analog PDM_RX1", "Digital PDM_RX1",
+				"Analog PDM_RX2", "Digital PDM_RX2",
+				"Analog PDM_RX3", "Digital PDM_RX3",
+				"Digital LPASS_PDM_TX", "Analog PDM_TX",
+				"Analog AMIC2", "Analog MIC BIAS External2",
+				"Stereo1 DMIC Mux", "Analog MIC BIAS Internal1";
+
+		mm1-dai-link {
+			link-name = "MultiMedia1";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+			};
+		};
+
+		mm2-dai-link {
+			link-name = "MultiMedia2";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+			};
+		};
+
+		mm3-dai-link {
+			link-name = "MultiMedia3";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+			};
+		};
+
+		mm4-dai-link {
+			link-name = "MultiMedia4";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA4>;
+			};
+		};
+
+		voicemmode1-dai-link {
+			link-name = "VoiceMMode1";
+
+			cpu {
+				sound-dai = <&q6voicedai VOICEMMODE1>;
+			};
+		};
+
+		pri-tdm-tx-link {
+			link-name = "Primary TDM0 Capture";
+
+			cpu {
+				sound-dai = <&q6afedai PRIMARY_TDM_TX_0>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&rt5514_i2c 0>;
+			};
+		};
+
+		sec-tdm-rx-link {
+			link-name = "Secondary TDM0 Playback";
+
+			cpu {
+				sound-dai = <&q6afedai SECONDARY_TDM_RX_0>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&cs35l36_top 0>,
+					    <&cs35l36_bottom 0>;
+			};
+		};
+
+		int0-mi2s-rx-link {
+			link-name = "Internal MI2S Playback";
+
+			cpu {
+				sound-dai = <&q6afedai INT0_MI2S_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&pm660l_codec 0>,
+					    <&lpass_codec 0>;
+			};
+		};
+
+		int3-mi2s-tx-link {
+			link-name = "Internal MI2S Capture";
+
+			cpu {
+				sound-dai = <&q6afedai INT3_MI2S_TX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&pm660l_codec 1>,
+					    <&lpass_codec 1>;
+			};
+		};
+	};
+
+	thermal-zones {
+		xo-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <1000>;
+
+			thermal-sensors = <&pm660_adc_tm 0>;
+
+			cooling-maps {
+				map0 {
+					trip = <&xo_alert0>;
+					cooling-device = <&cpu6 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu7 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+
+				};
+
+				map1 {
+					trip = <&xo_alert1>;
+					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu3 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu4 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu5 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+
+				};
+			};
+
+			trips {
+				xo_alert0: trip-point0 {
+					temperature = <47000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+
+				xo_alert1: trip-point1 {
+					temperature = <52000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+
+				xo_crit: trip-point2 {
+					temperature = <59000>;
+					hysteresis = <1000>;
+					type = "critical";
+				};
+			};
+		};
+
+		battery-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <1000>;
+
+			thermal-sensors = <&pm660_adc_tm 1>;
+
+			cooling-maps {
+				map0 {
+					trip = <&battery_alert0>;
+					cooling-device = <&pm660_charger 1 1>;
+				};
+
+				map1 {
+					trip = <&battery_alert1>;
+					cooling-device = <&pm660_charger 2 2>;
+				};
+
+				map2 {
+					trip = <&battery_alert2>;
+					cooling-device = <&pm660_charger 3 3>;
+				};
+
+				map3 {
+					trip = <&battery_alert3>;
+					cooling-device = <&pm660_charger 4 4>;
+				};
+
+				map4 {
+					trip = <&battery_alert4>;
+					cooling-device = <&pm660_charger 5 5>;
+				};
+			};
+
+			trips {
+				battery_alert0: trip-point0 {
+					temperature = <37500>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+
+				battery_alert1: trip-point1 {
+					temperature = <39500>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+
+				battery_alert2: trip-point2 {
+					temperature = <41500>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+
+				battery_alert3: trip-point3 {
+					temperature = <42500>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+
+				battery_alert4: trip-point4 {
+					temperature = <44500>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+			};
+		};
+	};
+
+	/*
+	 * The touchscreen regulator seems to be controlled somehow by a gpio.
+	 * Model it as a fixed regulator and keep it on. Without schematics we
+	 * don't know how this is actually wired up...
+	 */
+	ts_1p8_supply: ts-1p8-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "ts_1p8_supply";
+
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+
+		gpio = <&pm660_gpios 12 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	vph_pwr: vph-pwr-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vph_pwr";
+		regulator-min-microvolt = <3312000>;
+		regulator-max-microvolt = <3312000>;
+
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	/*
+	 * Supply map from xiaomi-lavender specifies this as the supply for
+	 * ldob1, ldob9, ldob10, ldoa2, and ldoa3, while downstream specifies
+	 * this as a power domain. Set this as a fixed regulator with the same
+	 * voltage as lavender until display is needed to avoid unneccessarily
+	 * using a deprecated binding (regulator-fixed-domain).
+	 */
+	vreg_s2b_1p05: vreg-s2b-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vreg_s2b";
+		regulator-min-microvolt = <1050000>;
+		regulator-max-microvolt = <1050000>;
+	};
+
+	cam_front_ldo: cam-front-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_front_ldo";
+		regulator-min-microvolt = <1352000>;
+		regulator-max-microvolt = <1352000>;
+		regulator-enable-ramp-delay = <135>;
+
+		gpios = <&pm660l_gpios 4 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+
+		pinctrl-0 = <&cam_front_ldo_pin>;
+		pinctrl-names = "default";
+	};
+
+	cam_rear_vana_ldo: cam-rear-vana-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_rear_vana_ldo";
+		gpios = <&tlmm 8 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	cam_rear_vdig_ldo: cam-rear-vdig-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_rear_vdig_ldo";
+		regulator-min-microvolt = <1352000>;
+		regulator-max-microvolt = <1352000>;
+		regulator-enable-ramp-delay = <233>;
+
+		gpios = <&pm660l_gpios 3 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_rear_ldo_pin>;
+	};
+
+	cam_rear_vcc_vdd: cam-rear-vcc-vdd-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "actuator_regulator";
+		regulator-min-microvolt = <2850000>;
+		regulator-max-microvolt = <2850000>;
+		regulator-enable-ramp-delay = <100>;
+
+		gpio = <&pm660l_gpios 2 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_rear_rcm_pin>;
+	};
+
+	cam_vio_ldo: cam-vio-ldo-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_vio_ldo";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+
+		gpios = <&pm660_gpios 13 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+
+		pinctrl-0 = <&cam_vio_pin>;
+		pinctrl-names = "default";
+	};
+};
+
+&adsp_pas {
+	status = "okay";
+	firmware-name = "qcom/sdm670/sargo/adsp.mbn";
+};
+
+&apps_rsc {
+	regulators-0 {
+		compatible = "qcom,pm660-rpmh-regulators";
+		qcom,pmic-id = "a";
+
+		vdd-s1-supply = <&vph_pwr>;
+		vdd-s2-supply = <&vph_pwr>;
+		vdd-s3-supply = <&vph_pwr>;
+		vdd-s4-supply = <&vph_pwr>;
+		vdd-s5-supply = <&vph_pwr>;
+		vdd-s6-supply = <&vph_pwr>;
+
+		vdd-l1-l6-l7-supply = <&vreg_s6a_0p87>;
+		vdd-l2-l3-supply = <&vreg_s2b_1p05>;
+		vdd-l5-supply = <&vreg_s2b_1p05>;
+		vdd-l8-l9-l10-l11-l12-l13-l14-supply = <&vreg_s4a_2p04>;
+		vdd-l15-l16-l17-l18-l19-supply = <&vreg_bob>;
+
+		/*
+		 * S1A (FTAPC0), S2A (FTAPC1), S3A (HFAPC1) are managed
+		 * by the Core Power Reduction hardened (CPRh) and the
+		 * Operating State Manager (OSM) HW automatically.
+		 */
+
+		vreg_s4a_2p04: smps4 {
+			regulator-min-microvolt = <1808000>;
+			regulator-max-microvolt = <2040000>;
+			regulator-enable-ramp-delay = <200>;
+		};
+
+		vreg_s6a_0p87: smps6 {
+			regulator-min-microvolt = <1224000>;
+			regulator-max-microvolt = <1352000>;
+			regulator-enable-ramp-delay = <150>;
+		};
+
+		/* LDOs */
+		vreg_l1a_1p225: ldo1 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1250000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l2a_1p0: ldo2 {
+			regulator-min-microvolt = <1000000>;
+			regulator-max-microvolt = <1000000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l3a_1p0: ldo3 {
+			regulator-min-microvolt = <1000000>;
+			regulator-max-microvolt = <1000000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l5a_0p848: ldo5 {
+			regulator-min-microvolt = <800000>;
+			regulator-max-microvolt = <800000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l6a_1p3: ldo6 {
+			regulator-min-microvolt = <1248000>;
+			regulator-max-microvolt = <1304000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l7a_1p2: ldo7 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l8a_1p8: ldo8 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-enable-ramp-delay = <250>;
+			regulator-always-on;
+		};
+
+		vreg_l9a_1p8: ldo9 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l10a_1p8: ldo10 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l11a_1p8: ldo11 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l12a_1p8: ldo12 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l13a_1p8: ldo13 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l14a_1p8: ldo14 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l15a_1p8: ldo15 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2950000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l16a_2p7: ldo16 {
+			regulator-min-microvolt = <2696000>;
+			regulator-max-microvolt = <2696000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l17a_1p8: ldo17 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2950000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l19a_3p3: ldo19 {
+			regulator-min-microvolt = <3000000>;
+			regulator-max-microvolt = <3312000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+	};
+
+	regulators-1 {
+		compatible = "qcom,pm660l-rpmh-regulators";
+		qcom,pmic-id = "b";
+
+		vdd-s1-supply = <&vph_pwr>;
+		vdd-s2-supply = <&vph_pwr>;
+		vdd-s3-s4-supply = <&vph_pwr>;
+		vdd-s5-supply = <&vph_pwr>;
+
+		vdd-l1-l9-l10-supply = <&vreg_s2b_1p05>;
+		vdd-l2-supply = <&vreg_bob>;
+		vdd-l3-l5-l7-l8-supply = <&vreg_bob>;
+		vdd-l4-l6-supply = <&vreg_bob>;
+		vdd-bob-supply = <&vph_pwr>;
+
+		/* LDOs */
+		vreg_l1b_0p925: ldo1 {
+			regulator-min-microvolt = <880000>;
+			regulator-max-microvolt = <900000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l2b_2p95: ldo2 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2960000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l3b_3p0: ldo3 {
+			regulator-min-microvolt = <2850000>;
+			regulator-max-microvolt = <3008000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l4b_2p95: ldo4 {
+			regulator-min-microvolt = <2960000>;
+			regulator-max-microvolt = <2960000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l5b_2p95: ldo5 {
+			regulator-min-microvolt = <2960000>;
+			regulator-max-microvolt = <2960000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l6b_3p3: ldo6 {
+			regulator-min-microvolt = <3008000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l7b_3p125: ldo7 {
+			regulator-min-microvolt = <3088000>;
+			regulator-max-microvolt = <3100000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		vreg_l8b_3p3: ldo8 {
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3312000>;
+			regulator-enable-ramp-delay = <250>;
+		};
+
+		/*
+		 * Downstream specifies a fixed voltage of 3.312 V, but the
+		 * PMIC4 BOB ranges don't support that. Widen the range a
+		 * little to avoid adding a new BOB regulator type.
+		 */
+		vreg_bob: bob {
+			regulator-min-microvolt = <3296000>;
+			regulator-max-microvolt = <3328000>;
+			regulator-enable-ramp-delay = <500>;
+		};
+	};
+};
+
+&camss {
+	vdda-phy-supply = <&vreg_l1a_1p225>;
+	vdda-pll-supply = <&vreg_s6a_0p87>;
+
+	status = "okay";
+};
+
+&camss_port0 {
+	camss_endpoint0: endpoint {
+		clock-lanes = <7>;
+		data-lanes = <0 1 2 3>;
+		remote-endpoint = <&cam_rear_endpoint>;
+	};
+};
+
+&camss_port1 {
+	camss_endpoint1: endpoint {
+		data-lanes = <0 1 2 3>;
+		remote-endpoint = <&cam_front_endpoint>;
+	};
+};
+
+&cci {
+	pinctrl-0 = <&cci0_default &cci1_default>;
+	pinctrl-1 = <&cci0_sleep &cci1_sleep>;
+	pinctrl-names = "default", "sleep";
+
+	status = "okay";
+};
+
+&cci_i2c0 {
+	rear_cam: camera@1a {
+		compatible = "sony,imx363";
+		reg = <0x1a>;
+
+		clocks = <&camcc CAM_CC_MCLK0_CLK>;
+		clock-names = "xvclk";
+
+		clock-frequency = <24000000>;
+
+		assigned-clocks = <&camcc CAM_CC_MCLK0_CLK>;
+		assigned-clock-rates = <24000000>;
+
+		reset-gpios = <&tlmm 127 GPIO_ACTIVE_LOW>;
+
+		vif-supply = <&cam_vio_ldo>;
+		vana-supply = <&cam_rear_vana_ldo>;
+		vdig-supply = <&cam_rear_vdig_ldo>;
+		vio-supply = <&cam_vio_ldo>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_rear_default &cam_mclk0_default>;
+
+		rotation = <90>;
+		orientation = <1>;
+
+		lens-focus = <&rear_cam_actuator>;
+
+		port {
+			cam_rear_endpoint: endpoint {
+				data-lanes = <0 1 2 3>;
+				link-frequencies = /bits/ 64 <321000000 636000000>;
+				remote-endpoint = <&camss_endpoint0>;
+			};
+		};
+	};
+
+	rear_cam_actuator: actuator@72 {
+		compatible = "onnn,lc898219xi";
+		reg = <0x72>;
+		vdd-supply = <&cam_rear_vcc_vdd>;
+		vana-supply = <&cam_rear_vana_ldo>;
+		vio-supply = <&cam_vio_ldo>;
+	};
+};
+
+&cci_i2c1 {
+	camera@1a {
+		compatible = "sony,imx355";
+		reg = <0x1a>;
+
+		clocks = <&camcc CAM_CC_MCLK2_CLK>;
+
+		/*
+		 * The sensor can accept a 24 MHz clock, but 19.2 MHz has
+		 * better driver compatibility.
+		 */
+		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;
+		assigned-clock-rates = <19200000>;
+
+		reset-gpios = <&tlmm 9 GPIO_ACTIVE_LOW>;
+
+		avdd-supply = <&cam_front_ldo>;
+		dvdd-supply = <&cam_front_ldo>;
+		dovdd-supply = <&cam_vio_ldo>;
+
+		pinctrl-0 = <&cam_mclk2_default>;
+		pinctrl-names = "default";
+
+		rotation = <270>;
+		orientation = <0>;
+
+		port {
+			cam_front_endpoint: endpoint {
+				data-lanes = <1 2 3 4>;
+				link-frequencies = /bits/ 64 <360000000>;
+				remote-endpoint = <&camss_endpoint1>;
+			};
+		};
+	};
+};
+
+&cdsp_pas {
+	status = "okay";
+	firmware-name = "qcom/sdm670/sargo/cdsp.mbn";
+};
+
+&gcc {
+	protected-clocks = <GCC_QSPI_CORE_CLK>,
+			   <GCC_QSPI_CORE_CLK_SRC>,
+			   <GCC_QSPI_CNOC_PERIPH_AHB_CLK>;
+};
+
+&gpi_dma0 {
+	status = "okay";
+};
+
+&gpi_dma1 {
+	status = "okay";
+};
+
+&gpu {
+	status = "okay";
+};
+
+&gpu_zap_shader {
+	firmware-name = "qcom/sdm670/sargo/a615_zap.mbn";
+};
+
+&i2c3 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	nfc@28 {
+		/*
+		 * The interface is actually NQ (PN557) but this should work
+		 * fine until we add embedded secure element.
+		 */
+		compatible = "nxp,nxp-nci-i2c";
+		reg = <0x28>;
+
+		interrupts-extended = <&tlmm 44 IRQ_TYPE_LEVEL_HIGH>;
+
+		enable-gpios = <&tlmm 12 GPIO_ACTIVE_HIGH>;
+		firmware-gpios = <&tlmm 43 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&nfc_default>;
+	};
+};
+
+&i2c9 {
+	clock-frequency = <100000>;
+	status = "okay";
+
+	synaptics-rmi4-i2c@20 {
+		compatible = "syna,rmi4-i2c";
+		reg = <0x20>;
+		interrupts-extended = <&tlmm 125 IRQ_TYPE_EDGE_FALLING>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&touchscreen_default>;
+
+		vio-supply = <&ts_1p8_supply>;
+
+		syna,reset-delay-ms = <200>;
+		syna,startup-delay-ms = <200>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		rmi4-f01@1 {
+			reg = <0x01>;
+			syna,nosleep-mode = <1>;
+		};
+
+		rmi4_f12: rmi4-f12@12 {
+			reg = <0x12>;
+			syna,sensor-type = <1>;
+		};
+	};
+};
+
+&i2c10 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	cs35l36_top: audio-codec@40 {
+		/* top speaker - portrait left */
+		compatible = "cirrus,cs35l36";
+		reg = <0x40>;
+
+		cirrus,boost-ind-nanohenry = <1000>;
+		cirrus,boost-ctl-select = <0x01>;
+		cirrus,boost-ctl-millivolt = <10000>;
+		cirrus,boost-peak-milliamp = <2600>;
+		cirrus,weak-fet-delay = <0x04>;
+		cirrus,weak-fet-thld = <0x01>;
+		cirrus,temp-warn-threshold = <0x01>;
+		cirrus,multi-amp-mode;
+
+		cirrus,irq-drive-select = <0x01>;
+		cirrus,irq-gpio-select = <0x00>;
+
+		sound-name-prefix = "Top";
+
+		interrupts-extended = <&tlmm 80 IRQ_TYPE_LEVEL_HIGH>;
+
+		reset-gpios = <&tlmm 14 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cs35l36_top_default>;
+
+		#sound-dai-cells = <1>;
+	};
+
+	cs35l36_bottom: audio-codec@41 {
+		/* bottom speaker - portrait right */
+		compatible = "cirrus,cs35l36";
+		reg = <0x41>;
+
+		cirrus,boost-ind-nanohenry = <1000>;
+		cirrus,boost-ctl-select = <0x01>;
+		cirrus,boost-ctl-millivolt = <10000>;
+		cirrus,boost-peak-milliamp = <2600>;
+		cirrus,temp-warn-threshold = <0x01>;
+		cirrus,multi-amp-mode;
+
+		cirrus,irq-drive-select = <0x01>;
+		cirrus,irq-gpio-select = <0x00>;
+
+		sound-name-prefix = "Bottom";
+
+		interrupts-extended = <&tlmm 79 IRQ_TYPE_LEVEL_HIGH>;
+
+		reset-gpios = <&tlmm 16 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cs35l36_bottom_default>;
+
+		#sound-dai-cells = <1>;
+	};
+
+	rt5514_i2c: audio-codec@57 {
+		compatible = "realtek,rt5514";
+		reg = <0x57>;
+		#sound-dai-cells = <1>;
+	};
+
+	drv2624: haptics@5a {
+		compatible = "ti,drv2624";
+		reg = <0x5a>;
+
+		ti,smart-loop = <1>; /* 0-closeloop, 1-openloop */
+		ti,actuator = <1>; /* 0-ERM, 1-LRA */
+		ti,rated-voltage = <75>;
+		ti,lra-frequency = <172>; /* f0 = 172Hz */
+		ti,ol-lra-frequency = <155>; /* off-f0 in OL */
+		ti,bemf-factor = <150>;
+		ti,bemf-gain = <0>;
+		ti,voltage-comp = <18>;
+		ti,blanking-time = <2>; /* 50 us */
+		ti,idiss-time = <2>; /* 50 us */
+		ti,zc-det-time = <0>; /* 100 us*/
+		ti,lra-wave-shape = <0>; /* Square wave */
+		ti,waveform-interval = <1>; /* 1 ms */
+		ti,fb-brake-factor = <0>; /* braking factor 1 */
+
+		reset-gpios = <&tlmm 24 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-0 = <&drv2624_default_state>;
+		pinctrl-names = "default";
+	};
+};
+
+&ipa {
+	firmware-name = "qcom/sdm670/sargo/ipa_fws.mbn";
+	status = "okay";
+};
+
+&lpass_codec {
+	clocks = <&q6afecc LPASS_CLK_ID_INT_MCLK_0 LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+		 <&int_cdc_bclk>;
+	clock-names = "mclk", "ahbix-clk";
+
+	assigned-clocks = <&q6afecc LPASS_CLK_ID_INT_MCLK_0 LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
+	assigned-clock-rates = <9600000>;
+
+	status = "okay";
+};
+
+&lpi_tlmm {
+	/* sensor gpios are protected */
+	gpio-reserved-ranges = <0 8>, <12 6>;
+	status = "okay";
+
+	sec_tdm_default: sec-tdm-default-state {
+		clk-pins {
+			pins = "gpio8";
+			function = "i2s1_clk";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		ws-pins {
+			pins = "gpio9";
+			function = "i2s1_ws";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		data-pins {
+			pins = "gpio10", "gpio11";
+			function = "i2s1_data";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+};
+
+&mdss {
+	status = "okay";
+};
+
+&mdss_dsi0 {
+	vdda-supply = <&vreg_l1a_1p225>;
+	status = "okay";
+
+	panel: panel@0 {
+		/* compatible is provided in specific device trees */
+		reg = <0>;
+
+		reset-gpios = <&tlmm 75 GPIO_ACTIVE_LOW>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&panel_default>;
+
+		power-supply = <&vreg_l6b_3p3>;
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&mdss_dsi0_out>;
+			};
+		};
+	};
+};
+
+&mdss_dsi0_out {
+	remote-endpoint = <&panel_in>;
+	data-lanes = <0 1 2 3>;
+};
+
+&mdss_dsi0_phy {
+	vdds-supply = <&vreg_l1b_0p925>;
+	status = "okay";
+};
+
+&mdss_mdp {
+	status = "okay";
+};
+
+&mss_pil {
+	firmware-name = "qcom/sdm670/sargo/mba.mbn", "qcom/sdm670/sargo/modem.mbn";
+	status = "okay";
+};
+
+&pm660_adc_tm {
+	status = "okay";
+
+	xo-therm@0 {
+		reg = <0>;
+		io-channels = <&pm660_adc ADC5_XO_THERM_100K_PU>;
+		qcom,hw-settle-time-us = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,ratiometric;
+	};
+
+	msm-therm@1 {
+		reg = <1>;
+		io-channels = <&pm660_adc ADC5_AMUX_THM1_100K_PU>;
+		qcom,hw-settle-time-us = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,ratiometric;
+	};
+};
+
+&pm660_charger {
+	monitored-battery = <&battery>;
+	status = "okay";
+};
+
+&pm660_fg {
+	monitored-battery = <&battery>;
+	power-supplies = <&pm660_charger>;
+	status = "okay";
+};
+
+&pm660_gpios {
+	cam_vio_pin: cam-vio-state {
+		pins = "gpio13";
+		function = "normal";
+		power-source = <0>;
+	};
+};
+
+&pm660_rradc {
+	status = "okay";
+};
+
+&pm660l_codec {
+	vdd-cdc-io-supply = <&vreg_l10a_1p8>;
+	vdd-cdc-tx-rx-cx-supply = <&vreg_l1b_0p925>;
+	vdd-micbias-supply = <&vreg_l7b_3p125>;
+
+	qcom,mbhc-vthreshold-low = <75 150 237 437 437>;
+	qcom,mbhc-vthreshold-high = <75 150 237 437 437>;
+
+	qcom,micbias-lvl = <2500>;
+	qcom,micbias1-ext-cap;
+
+	status = "okay";
+};
+
+&pm660l_flash {
+	status = "okay";
+
+	led-0 {
+		function = LED_FUNCTION_FLASH;
+		color = <LED_COLOR_ID_WHITE>;
+		led-sources = <1>, <2>;
+		led-max-microamp = <500000>;
+		flash-max-microamp = <1500000>;
+		flash-max-timeout-us = <1280000>;
+	};
+};
+
+&pm660l_gpios {
+	cam_rear_rcm_pin: cam-rear-actuator-state {
+		pins = "gpio2";
+		function = "normal";
+		power-source = <0>;
+		output-low;
+	};
+
+	cam_rear_ldo_pin: cam-rear-state {
+		pins = "gpio3";
+		function = "normal";
+		power-source = <PM8941_GPIO_VPH>;
+	};
+
+	cam_front_ldo_pin: cam-front-state {
+		pins = "gpio4";
+		function = "normal";
+		power-source = <0>;
+	};
+
+	vol_up_pin: vol-up-state {
+		pins = "gpio7";
+		function = "normal";
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_NO>;
+		input-enable;
+		bias-pull-up;
+	};
+};
+
+&pon_pwrkey {
+	status = "okay";
+};
+
+&pon_resin {
+	linux,code = <KEY_VOLUMEDOWN>;
+	status = "okay";
+};
+
+&qupv3_id_0 {
+	status = "okay";
+};
+
+&qupv3_id_1 {
+	status = "okay";
+};
+
+&q6afedai {
+	dai@19 {
+		reg = <PRIMARY_TDM_TX_0>;
+
+		qcom,tdm-sync-mode = <0>;
+		qcom,tdm-sync-src = <1>;
+		qcom,tdm-data-out = <0>;
+		qcom,tdm-invert-sync = <0>;
+		qcom,tdm-data-delay = <1>;
+		qcom,tdm-data-align = <0>;
+	};
+
+	dai@28 {
+		reg = <SECONDARY_TDM_RX_0>;
+
+		qcom,tdm-sync-mode = <0>;
+		qcom,tdm-sync-src = <1>;
+		qcom,tdm-data-out = <0>;
+		qcom,tdm-invert-sync = <0>;
+		qcom,tdm-data-delay = <1>;
+		qcom,tdm-data-align = <0>;
+	};
+
+	dai@95 {
+		reg = <INT0_MI2S_RX>;
+		qcom,sd-lines = <0 1>;
+	};
+
+	dai@9c {
+		reg = <INT3_MI2S_TX>;
+		qcom,sd-lines = <0 1>;
+	};
+};
+
+&q6asmdai {
+	dai@0 {
+		reg = <0>;
+	};
+
+	dai@1 {
+		reg = <1>;
+	};
+
+	dai@2 {
+		reg = <2>;
+	};
+
+	dai@3 {
+		reg = <3>;
+	};
+};
+
+&q6core {
+	qcom,acdb-name = "qcom/sdm670/sargo/Global_cal.acdb";
+};
+
+&q6voicedai {
+	dai@1 {
+		reg = <VOICEMMODE1>;
+	};
+};
+
+&qup_uart12_rx {
+	drive-strength = <2>;
+	bias-pull-up;
+};
+
+&qup_uart12_tx {
+	drive-strength = <2>;
+	bias-disable;
+};
+
+&sdhc_1 {
+	supports-cqe;
+	mmc-hs200-1_8v;
+	mmc-hs400-1_8v;
+	mmc-ddr-1_8v;
+
+	qcom,ddr-config = <0xc3040873>;
+
+	vmmc-supply = <&vreg_l4b_2p95>;
+	vqmmc-supply = <&vreg_l8a_1p8>;
+
+	status = "okay";
+};
+
+&spi2 {
+	status = "okay";
+
+	rt5514_spi: audio-codec@0 {
+		compatible = "realtek,rt5514";
+		reg = <0x00>;
+		interrupts-extended = <&tlmm 126 IRQ_TYPE_EDGE_RISING>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&rt5514_spi_default>;
+		spi-max-frequency = <10000000>;
+		spi-cpol;
+		spi-cpha;
+		#sound-dai-cells = <1>;
+	};
+};
+
+&tlmm {
+	gpio-reserved-ranges = <0 4>, <81 4>;
+
+	cam_rear_default: cam-rear-default-state {
+		reset-pins {
+			pins = "gpio127";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	cs35l36_top_default: cs35l36-top-default-state {
+		reset-pins {
+			pins = "gpio14";
+			function = "gpio";
+			drive-strength = <2>;
+			output-high;
+		};
+
+		irq-pins {
+			pins = "gpio80";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-down;
+			output-disable;
+		};
+	};
+
+	cs35l36_bottom_default: cs35l36-bottom-default-state {
+		reset-pins {
+			pins = "gpio16";
+			function = "gpio";
+			drive-strength = <2>;
+			output-high;
+		};
+
+		irq-pins {
+			pins = "gpio79";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-down;
+			output-disable;
+		};
+	};
+
+	panel_default: panel-default-state {
+		te-pins {
+			pins = "gpio10";
+			function = "mdp_vsync";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+
+		reset-pins {
+			pins = "gpio75";
+			function = "gpio";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		mode-pins {
+			pins = "gpio76";
+			function = "gpio";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+
+	pri_tdm_default: pri-tdm-default-state {
+		misc-pins {
+			pins = "gpio65";
+			function = "pri_mi2s";
+			drive-strength = <8>;
+		};
+
+		ws-pins {
+			pins = "gpio66";
+			function = "pri_mi2s_ws";
+			drive-strength = <8>;
+		};
+
+		dout-pins {
+			pins = "gpio67";
+			function = "pri_mi2s";
+			drive-strength = <8>;
+		};
+
+		din-pins {
+			pins = "gpio68";
+			function = "pri_mi2s";
+			drive-strength = <8>;
+		};
+	};
+
+	pri_tdm_sleep: pri-tdm-sleep-state {
+		misc-pins {
+			pins = "gpio65";
+			function = "pri_mi2s";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+
+		ws-pins {
+			pins = "gpio66";
+			function = "pri_mi2s_ws";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+
+		dout-pins {
+			pins = "gpio67";
+			function = "pri_mi2s";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+
+		din-pins {
+			pins = "gpio68";
+			function = "pri_mi2s";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
+
+	rt5514_spi_default: rt5514-spi-default-state {
+		pins = "gpio126";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-down;
+		output-disable;
+	};
+
+	touchscreen_default: ts-default-state {
+		ts-reset-pins {
+			pins = "gpio99";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-up;
+			output-high;
+		};
+
+		ts-irq-pins {
+			pins = "gpio125";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		ts-switch-pins {
+			pins = "gpio135";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	drv2624_default_state: drv2624-default-state {
+		pins = "gpio24";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+		output-low;
+	};
+
+	nfc_default: nfc-default-state {
+		/*
+		 * gpio12: enable
+		 * gpio43: firmware
+		 * gpio44: irq
+		 * gpio116: ese
+		 */
+		pins = "gpio12", "gpio43", "gpio44", "gpio116";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-down;
+	};
+};
+
+&uart6 {
+	pinctrl-0 = <&qup_uart6_4pin>;
+	status = "okay";
+
+	bluetooth {
+		compatible = "qcom,wcn3990-bt";
+		vddio-supply = <&vph_pwr>;
+		vddxo-supply = <&vreg_l9a_1p8>;
+		vddrf-supply = <&vreg_l6a_1p3>;
+		vddch0-supply = <&vreg_l19a_3p3>;
+		max-speed = <3200000>;
+	};
+};
+
+&uart12 {
+	status = "okay";
+};
+
+&usb_1_hsphy {
+	vdd-supply = <&vreg_l1b_0p925>;
+	vdda-pll-supply = <&vreg_l10a_1p8>;
+	vdda-phy-dpdm-supply = <&vreg_l7b_3p125>;
+
+	status = "okay";
+};
+
+&usb_1 {
+	qcom,select-utmi-as-pipe-clk;
+	status = "okay";
+};
+
+&usb_1_dwc3 {
+	/* Only peripheral works for now */
+	dr_mode = "peripheral";
+
+	/* Do not assume that sdm670.dtsi will never support USB 3.0 */
+	phys = <&usb_1_hsphy>;
+	phy-names = "usb2-phy";
+	maximum-speed = "high-speed";
+};
+
+&venus {
+	firmware-name = "qcom/sdm670/sargo/venus.mbn";
+	status = "okay";
+};
+
+&wifi {
+	vdd-0.8-cx-mx-supply = <&vreg_l5a_0p848>;
+	vdd-1.8-xo-supply = <&vreg_l9a_1p8>;
+	vdd-1.3-rfa-supply = <&vreg_l6a_1p3>;
+	vdd-3.3-ch0-supply = <&vreg_l19a_3p3>;
+
+	qcom,snoc-host-cap-8bit-quirk;
+
+	status = "okay";
+};

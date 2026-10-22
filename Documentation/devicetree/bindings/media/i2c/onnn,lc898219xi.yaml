@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+# Copyright 2025 Vasiliy Doylov <nekocwd@mainlining.org>
+# Copyright 2026 Frieder Hannenheim <kernel@fhannenheim.net>
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/media/i2c/onnn,lc898219xi.yaml##
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: ON Semiconductor LC898219XI Voice Coil Motor (VCM) Lens
+
+maintainers:
+  - Frieder Hannenheim <kernel@fhannenheim.net>
+
+description:
+  The LC898219XI is a 12-bit digital-to-analog (DAC) converter.
+  VCM current is controlled with a linear mode driver.The DAC is controlled
+  via a 2-wire (I2C-compatible) serial interface that operates at clock
+  rates up to 1MHz. This chip integrates Advanced Actuator Control (AAC)
+  technology and is intended for driving voice coil lenses in camera modules.
+
+properties:
+  compatible:
+    enum:
+      - onnn,lc898219xi
+
+  reg:
+    maxItems: 1
+
+  vcc-supply:
+    description:
+      Definition of the regulator used as voltage supply.
+
+required:
+  - compatible
+  - reg
+  - vcc-supply
+
+additionalProperties: false
+
+examples:
+  - |
+    i2c {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        camera-lens@74 {
+            compatible = "onnn,lc898219xi";
+            reg = <0x72>;
+
+            vcc-supply = <&mt6358_vcamio_reg>;
+        };
+    };
+
+...
