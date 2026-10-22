@@ -655,25 +655,6 @@
 	};
 };
 
-/* NFC */
-&i2c3 {
-	status = "okay";
-	clock-frequency = <400000>;
-
-	nfc@28 {
-		compatible = "nxp,nxp-nci-i2c";
-		reg = <0x28>;
-
-		interrupts-extended = <&tlmm 44 IRQ_TYPE_EDGE_RISING>;
-		enable-gpios = <&tlmm 12 GPIO_ACTIVE_HIGH>;
-		firmware-gpios = <&tlmm 43 GPIO_ACTIVE_HIGH>;
-
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&nfc_default>;
-		pinctrl-1 = <&nfc_sleep>;
-	};
-};
-
 /* Audio amp */
 &i2c7 {
 	status = "okay";
@@ -1231,23 +1212,6 @@
 			input-enable;
 		};
 	};
-
-	/* GPIOs for NFC */
-	nfc_default: nfc-default-state {
-		pins = "gpio12", "gpio43", "gpio44", "gpio116";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-pull-up;
-	};
-
-	nfc_sleep: nfc-sleep-state {
-		pins = "gpio12", "gpio43", "gpio44", "gpio116";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-disable;
-	};
-
-	/* GPIOs for Audio Codec */
 	pri_tdm_default: pri-tdm-default-state {
 		misc-pins {
 			pins = "gpio65";
