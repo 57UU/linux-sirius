@@ -707,6 +707,14 @@ int msm_video_register(struct camss_video *video, struct v4l2_device *v4l2_dev,
 	q->buf_struct_size = sizeof(struct camss_buffer);
 	q->dev = video->camss->dev;
 	q->lock = &video->q_lock;
+	/*
+	 * Defer the hardware start until the first buffer is queued.  Some
+	 * userspace (e.g. libcamera's simple pipeline) may STREAMON before
+	 * queueing buffers; starting the VFE with zero buffers makes it run
+	 * without a destination, so no frame-done IRQ is ever raised and the
+	 * stream silently produces nothing.
+	 */
+	q->min_queued_buffers = 1;
 	ret = vb2_queue_init(q);
 	if (ret < 0) {
 		dev_err(v4l2_dev->dev, "Failed to init vb2 queue: %d\n", ret);
