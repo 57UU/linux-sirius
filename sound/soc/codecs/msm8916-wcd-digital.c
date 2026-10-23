@@ -961,6 +961,12 @@ static const struct snd_soc_dapm_route msm8916_wcd_digital_audio_map[] = {
 
 	{"I2S TX1", NULL, "CIC1 MUX"},
 	{"I2S TX2", NULL, "CIC2 MUX"},
+	/*
+	 * sdm660/670 internal codec capture leaves via I2S TX3 (AFE
+	 * INT3_MI2S_TX); downstream feeds it from the TX IIR filter.
+	 * Upstream only wires TX1/TX2, so the PDM path never powers up.
+	 */
+	{"I2S TX3", NULL, "IIR1"},
 
 	{"I2S TX1", NULL, "TX_I2S_CLK"},
 	{"I2S TX2", NULL, "TX_I2S_CLK"},
