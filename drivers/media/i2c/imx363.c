@@ -545,6 +545,28 @@ static const struct imx363_mode supported_modes[] = {
 			.height = IMX363_PIXEL_ARRAY_HEIGHT,
 		},
 	},
+	{
+		/*
+		 * 2x2 平均合并模式（2016x1512）。
+		 * PPL / VTS / link freq 与全分辨率完全相同，只是把 BINNING_MODE
+		 * 打开并把输出尺寸减半，所以帧率不变、每帧 CSI 数据量降到 1/4。
+		 */
+		.width = 2016,
+		.height = 1512,
+		.vts_def = IMX363_VTS_30FPS,
+		.vts_min = IMX363_VTS_30FPS,
+		.reg_list = {
+			.num_of_regs = ARRAY_SIZE(mode_4032x3024_regs),
+			.regs = mode_4032x3024_regs,
+		},
+		.link_freq_index = IMX363_LINK_FREQ_2300MBPS,
+		.crop = {
+			.left = IMX363_PIXEL_ARRAY_LEFT,
+			.top = IMX363_PIXEL_ARRAY_TOP,
+			.width = IMX363_PIXEL_ARRAY_WIDTH,
+			.height = IMX363_PIXEL_ARRAY_HEIGHT,
+		},
+	},
 };
 
 struct imx363 {
@@ -964,6 +986,23 @@ static int imx363_start_streaming(struct imx363 *imx363)
 		return ret;
 	}
 
+	/*
+	 * 2x2 binning 模式：mode_4032x3024_regs 里 BINNING_MODE 固定为 0，
+	 * 这里按当前模式打开 binning 并把输出尺寸改成 2016x1512。
+	 * 0x0901 (BINNING_TYPE_V) 在共用表里已经是 0x11（2x2 平均）。
+	 */
+	if (imx363->cur_mode->width == 2016) {
+		ret = cci_write(imx363->regmap, IMX363_REG_BINNING_MODE, 1, NULL);
+		if (!ret)
+			ret = cci_write(imx363->regmap, IMX363_REG_X_OUT_SIZE, 2016, NULL);
+		if (!ret)
+			ret = cci_write(imx363->regmap, IMX363_REG_Y_OUT_SIZE, 1512, NULL);
+		if (ret) {
+			dev_err(&client->dev, "%s failed to enable binning mode\n", __func__);
+			return ret;
+		}
+	}
+
 	/* Apply customized values from user */
 	ret =  __v4l2_ctrl_handler_setup(imx363->sd.ctrl_handler);
 	if (ret)
@@ -1009,13 +1048,17 @@ static int imx363_power_on(struct device *dev)
 
 	usleep_range(400, 600);
 
-	gpiod_set_value_cansleep(imx363->reset_gpio, 0);
-
+	/* Sony sensors need a stable MCLK before XCLR is released. */
 	ret = clk_prepare_enable(imx363->clk);
 	if (ret) {
 		dev_err(dev, "failed to enable clock\n");
 		regulator_bulk_disable(IMX363_NUM_SUPPLIES, imx363->supplies);
+		return ret;
 	}
+
+	usleep_range(1000, 1200);
+
+	gpiod_set_value_cansleep(imx363->reset_gpio, 0);
 
 	usleep_range(1000, 1200);
 
@@ -1027,9 +1070,11 @@ static int imx363_power_off(struct device *dev)
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct imx363 *imx363 = to_imx363(sd);
 
-	clk_disable_unprepare(imx363->clk);
-
 	gpiod_set_value_cansleep(imx363->reset_gpio, 1);
+
+	usleep_range(100, 200);
+
+	clk_disable_unprepare(imx363->clk);
 
 	regulator_bulk_disable(IMX363_NUM_SUPPLIES, imx363->supplies);
 
@@ -1358,7 +1403,7 @@ static int imx363_probe(struct i2c_client *client)
 
 	/* request optional reset pin */
 	imx363->reset_gpio = devm_gpiod_get_optional(&client->dev, "reset",
-						     GPIOD_OUT_LOW);
+						    GPIOD_OUT_HIGH);
 	if (IS_ERR(imx363->reset_gpio))
 		return PTR_ERR(imx363->reset_gpio);
 
