@@ -169,7 +169,9 @@
 			"Analog PDM_RX2", "Digital PDM_RX2",
 			"Analog PDM_RX3", "Digital PDM_RX3",
 			"Digital LPASS_PDM_TX", "Analog PDM_TX",
-			"Analog AMIC2", "Analog MIC BIAS External2";
+			"Analog AMIC1", "Analog MIC BIAS External1",
+			"Analog AMIC2", "Analog MIC BIAS External2",
+			"Analog AMIC3", "Analog MIC BIAS External1";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
@@ -331,66 +333,37 @@
 		regulator-max-microvolt = <1050000>;
 	};
 
-	/* Camera sensors */
-	// IMX586: DVDD, AVDD
-	cam_wide_vdd_ldo: cam-wide-vdd-ldo-regulator {
+	/* Camera: rear main Sony IMX363 (12MP) */
+	/* VANA 2.8V, enable via GPIO 8, input PM660L BOB */
+	cam_rear_vana_ldo: cam-rear-vana-ldo-regulator {
 		compatible = "regulator-fixed";
-		regulator-name = "cam_wide_vdd_ldo";
-		regulator-min-microvolt = <1352000>;
-		regulator-max-microvolt = <1352000>;
-		regulator-enable-ramp-delay = <135>;
-
-		gpios = <&pm660l_gpios 2 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-
-		pinctrl-0 = <&cam_wide_vdd_ldo_pin>;
-		pinctrl-names = "default";
-	};
-
-	// S5K3M5: AVDD
-	cam_tele_vdd_ldo: cam-tele-vdd-ldo-regulator {
-		compatible = "regulator-fixed";
-		regulator-name = "cam_tele_vdd_ldo";
+		regulator-name = "cam_rear_vana_ldo";
 		regulator-min-microvolt = <2800000>;
 		regulator-max-microvolt = <2800000>;
-		regulator-enable-ramp-delay = <135>;
+		regulator-enable-ramp-delay = <233>;
 
-		gpios = <&pm660l_gpios 3 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-
-		pinctrl-0 = <&cam_tele_ldo_pin>;
-		pinctrl-names = "default";
-	};
-
-	// IMX586: VCM (Autofocus)
-	cam_wide_vcm_ldo: cam-wide-vcm-ldo-regulator {
-		compatible = "regulator-fixed";
-		regulator-name = "cam_wide_vcm_ldo";
-		regulator-min-microvolt = <2800000>;
-		regulator-max-microvolt = <2800000>;
-		regulator-enable-ramp-delay = <135>;
-
-		gpios = <&pm660l_gpios 4 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-
-		pinctrl-0 = <&cam_wide_vcm_ldo_pin>;
-		pinctrl-names = "default";
-	};
-
-	// S5K3T1: AVDD, DVDD
-	cam_front_vdd_ldo: cam-front-vdd-ldo-regulator {
-		compatible = "regulator-fixed";
-		regulator-name = "cam_front_vdd_ldo";
 		gpios = <&tlmm 8 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
+		vin-supply = <&vreg_bob>;
+
+		pinctrl-0 = <&cam_rear_vana_default>;
+		pinctrl-names = "default";
 	};
 
-	// S5K3P9: DVDD
-	cam_uw_vdd_ldo: cam-uw-vdd-ldo-regulator {
+	/* VDIG 1.35V, enable via GPIO 29, input PM660 S6 */
+	cam_rear_vdig_ldo: cam-rear-vdig-ldo-regulator {
 		compatible = "regulator-fixed";
-		regulator-name = "cam_uw_vdd_ldo";
-		gpios = <&tlmm 27 GPIO_ACTIVE_HIGH>;
+		regulator-name = "cam_rear_vdig_ldo";
+		regulator-min-microvolt = <1350000>;
+		regulator-max-microvolt = <1350000>;
+		regulator-enable-ramp-delay = <233>;
+
+		gpios = <&tlmm 29 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
+		vin-supply = <&vreg_s6a_0p87>;
+
+		pinctrl-0 = <&cam_rear_vdig_default>;
+		pinctrl-names = "default";
 	};
 
 	tp_vddio_vreg: tp-vddio-regulator {
@@ -723,18 +696,15 @@
 	// smb1355@c
 };
 
-/* Xiaomi did cursed stuff with MIPI switch to switch between front and
- * ultrawide cameras. CSI2 MIPI switch is controlled by SoC GPIO_25 */
-
-/* CSI_0: Sony IMX586. CAM_W_MCLK0 (GPIO_13), I2C0.
- * CSI_1: Two cameras hooked up via TS5MP646 MIPI switch:
- * - Port A: Front - Samsung S5K3T1. CAM_F_MCLK2 (GPIO_15), I2C1.
- * - Port B: Ultrawide - Samsung S5K3P9. CAM_U_MCLK3 (GPIO_16), I2C0.
- * CSI_2: Samsung S5K3M5. CAM_T_MCLK1 (GPIO_13), I2C1. Only a single-lane. */
+/* Camera: the rear main sensor is a Sony IMX363 (12MP, 1/2.55").
+ * CSI_0, CCI master 0, CAM_W_MCLK0 (GPIO 13), CAM_RESET0 (GPIO 30).
+ * The front (S5K3T1, CSI_2) and rear depth (S5K5E8, CSI_1) sensors
+ * have no mainline driver yet, so they are not described here. */
 
 /* Camera subsystem */
 &camss {
-	vdda-phy-supply = <&vreg_l11a_1p8>;
+	vdda-phy-supply = <&vreg_l1a_1p225>;
+	vdda-pll-supply = <&vreg_s6a_0p87>;
 	status = "okay";
 
 	ports {
@@ -745,37 +715,21 @@
 				remote-endpoint = <&cam_rear_main_endpoint>;
 			};
 		};
-
-		port@1 {
-			camss_endpoint1: endpoint {
-				clock-lanes = <7>;
-				data-lanes = <0 1 2 3>;
-				remote-endpoint = <&cam_dual_endpoint>;
-			};
-		};
-
-		port@2 {
-			camss_endpoint2: endpoint {
-				clock-lanes = <3>;
-				data-lanes = <0>;
-				remote-endpoint = <&cam_rear_tele_endpoint>;
-			};
-		};
 	};
 };
 
 &cci {
 	pinctrl-names = "default", "sleep";
-	pinctrl-0 = <&cci0_default &cci1_default &cam_mclk_default>;
+	pinctrl-0 = <&cci0_default &cci1_default &cam_mclk0_default>;
 	pinctrl-1 = <&cci0_sleep &cci1_sleep>;
 
 	status = "okay";
 };
 
 &cci_i2c0 {
-	camera@50 {
-		compatible = "sony,imx586";
-		reg = <0x50>;
+	camera@10 {
+		compatible = "sony,imx363";
+		reg = <0x10>;
 
 		clocks = <&camcc CAM_CC_MCLK0_CLK>;
 		clock-names = "xvclk";
@@ -785,6 +739,15 @@
 
 		reset-gpios = <&tlmm 30 GPIO_ACTIVE_LOW>;
 
+		/* Rear sensor needs a 270 degree clockwise correction to match
+		 * the phone's natural (portrait) orientation. */
+		rotation = <270>;
+		orientation = <1>; /* back */
+
+		vif-supply = <&vreg_l14a_1p8>;
+		vana-supply = <&cam_rear_vana_ldo>;
+		vdig-supply = <&cam_rear_vdig_ldo>;
+
 		pinctrl-names = "default";
 		pinctrl-0 = <&cam_rear_main_default>;
 
@@ -793,83 +756,6 @@
 				data-lanes = <0 1 2 3>;
 				link-frequencies = /bits/ 64 <321000000 636000000>;
 				remote-endpoint = <&camss_endpoint0>;
-			};
-		};
-	};
-
-	camera@51 {
-		compatible = "samsung,s5k3p9";
-		reg = <0x51>;
-
-		clocks = <&camcc CAM_CC_MCLK3_CLK>;
-		clock-names = "mclk";
-		clock-frequency = <19200000>;
-		assigned-clocks = <&camcc CAM_CC_MCLK3_CLK>;
-		assigned-clock-rates = <24000000>;
-
-		reset-gpios = <&tlmm 24 GPIO_ACTIVE_HIGH>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&cam_rear_uw_default>;
-
-		/* Shares CSI port 1 with front camera (S5K3T1) via TS5MP646
-		 * MIPI switch controlled by GPIO 25. Both cannot be active
-		 * simultaneously until the switch is modeled in DT. */
-		port {
-			cam_rear_uw_endpoint: endpoint {
-				data-lanes = <0 1 2 3>;
-				link-frequencies = /bits/ 64 <360000000>;
-				remote-endpoint = <&camss_endpoint1>;
-			};
-		};
-	};
-};
-
-&cci_i2c1 {
-	camera@50 {
-		compatible = "samsung,s5k3t1";
-		reg = <0x50>;
-
-		clocks = <&camcc CAM_CC_MCLK2_CLK>;
-		clock-names = "mclk";
-		clock-frequency = <19200000>;
-		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;
-		assigned-clock-rates = <24000000>;
-
-		reset-gpios = <&tlmm 9 GPIO_ACTIVE_HIGH>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&cam_front_default>;
-
-		port {
-			cam_dual_endpoint: endpoint {
-				data-lanes = <0 1 2 3>;
-				link-frequencies = /bits/ 64 <360000000>;
-				remote-endpoint = <&camss_endpoint1>;
-			};
-		};
-	};
-
-	camera@51 {
-		compatible = "samsung,s5k3m5";
-		reg = <0x51>;
-
-		clocks = <&camcc CAM_CC_MCLK1_CLK>;
-		clock-names = "mclk";
-		clock-frequency = <19200000>;
-		assigned-clocks = <&camcc CAM_CC_MCLK1_CLK>;
-		assigned-clock-rates = <24000000>;
-
-		reset-gpios = <&tlmm 23 GPIO_ACTIVE_HIGH>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&cam_rear_tele_default>;
-
-		port {
-			cam_rear_tele_endpoint: endpoint {
-				data-lanes = <0>;
-				link-frequencies = /bits/ 64 <360000000>;
-				remote-endpoint = <&camss_endpoint2>;
 			};
 		};
 	};
@@ -976,8 +862,18 @@
 	status = "okay";
 };
 
+/*
+ * LPI TLMM must stay disabled: APPS access to the LPASS LPI block hangs
+ * sirius even with the q6afecc macro/dcodec vote clocks and an active
+ * ADSP audio stream (verified three times).  The PM660L PDM mic pins
+ * therefore cannot be muxed from Linux with the mainline LPI driver.
+ */
 //&lpi_tlmm {
 //	status = "okay";
+//
+//	clocks = <&q6afecc LPASS_HW_MACRO_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>,
+//		 <&q6afecc LPASS_HW_DCODEC_VOTE LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
+//	clock-names = "core", "audio";
 //};
 
 &q6afedai {
@@ -1082,27 +978,6 @@
 };
 
 &pm660l_gpios {
-	cam_wide_vdd_ldo_pin: cam-wide-vdd-state {
-		pins = "gpio2";
-		function = "normal";
-		power-source = <PM8941_GPIO_VPH>;
-		output-low;
-	};
-
-	cam_tele_ldo_pin: cam-tele-state {
-		pins = "gpio3";
-		function = "normal";
-		power-source = <PM8941_GPIO_VPH>;
-		output-low;
-	};
-
-	cam_wide_vcm_ldo_pin: cam-rear-state {
-		pins = "gpio4";
-		function = "normal";
-		power-source = <PM8941_GPIO_VPH>;
-		output-low;
-	};
-
 	vol_up_pin: vol-up-state {
 		pins = "gpio7";
 		function = "normal";
@@ -1275,37 +1150,19 @@
 		drive-strength = <2>;
 	};
 
-	/* GPIOs for Camera reset/power */
-	cam_front_default: cam-front-default-state {
+	/* Camera power enables and reset (rear main IMX363) */
+	cam_rear_vana_default: cam-rear-vana-default-state {
 		pins = "gpio8";
 		function = "gpio";
 		drive-strength = <2>;
 		bias-disable;
-
-		reset-pins {
-			pins = "gpio9";
-			function = "gpio";
-			drive-strength = <2>;
-			input-enable;
-		};
 	};
 
-	cam_rear_tele_default: cam-rear-tele-default-state {
-		reset-pins {
-			pins = "gpio23";
-			function = "gpio";
-			drive-strength = <2>;
-			bias-disable;
-		};
-	};
-
-	cam_rear_uw_default: cam-rear-uw-default-state {
-		reset-pins {
-			pins = "gpio24";
-			function = "gpio";
-			drive-strength = <2>;
-			bias-disable;
-		};
+	cam_rear_vdig_default: cam-rear-vdig-default-state {
+		pins = "gpio29";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
 	};
 
 	cam_rear_main_default: cam-rear-main-default-state {
@@ -1317,39 +1174,12 @@
 		};
 	};
 
-	/* GPIOs for Camera MCLKs */
-	cam_mclk_default: cam-default-state {
-		// Main (IMX586)
-		mclk0-pins {
-			pins = "gpio13";
-			function = "cam_mclk";
-			drive-strength = <2>;
-			bias-disable;
-		};
-
-		// Telephoto (S5K3M5)
-		mclk1-pins {
-			pins = "gpio14";
-			function = "cam_mclk";
-			drive-strength = <2>;
-			bias-disable;
-		};
-
-		// Front (S5K3T1SP)
-		mclk2-pins {
-			pins = "gpio15";
-			function = "cam_mclk";
-			drive-strength = <2>;
-			bias-disable;
-		};
-
-		// Ultrawide (S5K3P9)
-		mclk3-pins {
-			pins = "gpio16";
-			function = "cam_mclk";
-			drive-strength = <2>;
-			bias-disable;
-		};
+	/* Camera MCLK0 (GPIO 13) */
+	cam_mclk0_default: cam-mclk0-default-state {
+		pins = "gpio13";
+		function = "cam_mclk";
+		drive-strength = <2>;
+		bias-disable;
 	};
 
 	/* MicroSD card-detect */
