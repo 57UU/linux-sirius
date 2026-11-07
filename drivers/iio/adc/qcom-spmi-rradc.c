@@ -758,7 +758,10 @@ static int rradc_read_raw(struct iio_dev *indio_dev,
 		if (ret < 0)
 			return ret;
 
-		*val = chan->scale_fn(chip, adc_code, val);
+		ret = chan->scale_fn(chip, adc_code, val);
+		if (ret < 0)
+			return ret;
+
 		return IIO_VAL_INT;
 	default:
 		return -EINVAL;
@@ -848,7 +851,8 @@ static const struct rradc_channel rradc_chans[RR_ADC_CHAN_MAX] = {
 static const struct iio_chan_spec rradc_iio_chans[RR_ADC_CHAN_MAX] = {
 	{
 		.type = IIO_RESISTANCE,
-		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
+				      BIT(IIO_CHAN_INFO_PROCESSED),
 		.address = RR_ADC_BATT_ID,
 		.channel = 0,
 		.indexed = 1,

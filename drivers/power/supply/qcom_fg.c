@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2020, The Linux Foundation. All rights reserved. */
 
+#include <linux/delay.h>
 #include <linux/device.h>
+#include <linux/iio/consumer.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/math64.h>
@@ -63,6 +65,36 @@
 #define MEM_IF_TIMEOUT_MS		5000
 #define SRAM_ACCESS_RELEASE_DELAY_MS	500
 
+/* FG IMA access (gen3) */
+#define MEM_INTF_IMA_OPR_STS		0x454
+#define MEM_INTF_ADDR_MSB		0x462
+#define MEM_INTF_WR_DATA3		0x466
+#define IACS_RDY_BIT			BIT(1)
+#define IACS_SLCT_BIT			BIT(5)
+#define IMA_WR_EN_BIT			BIT(6)
+#define MEM_ACS_BURST_BIT		BIT(7)
+#define IMA_CTL_MASK			GENMASK(7, 6)
+
+/* Battery profile (gen3) */
+#define PROFILE_LOAD_WORD		24
+#define PROFILE_LOAD_OFFSET		0
+#define PROFILE_INTEGRITY_WORD		79
+#define PROFILE_INTEGRITY_OFFSET	3
+#define PROFILE_LEN			224
+#define PROFILE_LOAD_BIT		BIT(0)
+#define HLOS_RESTART_BIT		BIT(3)
+
+#define BATT_SOC_RESTART		0x48
+#define RESTART_GO_BIT			BIT(0)
+#define BATT_SOC_INT_RT_STS		0x10
+#define SOC_READY_BIT			BIT(1)
+
+struct qcom_fg_battery_profile {
+	u32 batt_id_kohm;
+	u32 batt_id_range_pct;
+	u8 data[PROFILE_LEN];
+};
+
 struct qcom_fg_chip;
 
 struct qcom_fg_ops {
@@ -96,6 +128,12 @@ struct qcom_fg_chip {
 	spinlock_t sram_request_lock;
 	spinlock_t sram_rw_lock;
 	int sram_requests;
+
+	struct iio_channel *batt_id_chan;
+	struct delayed_work profile_load_work;
+	struct qcom_fg_battery_profile profiles[2];
+	int num_profiles;
+	bool profile_loaded;
 };
 
 /************************
@@ -1035,6 +1073,253 @@ static int qcom_fg_clear_ima(struct qcom_fg_chip *chip,
 	return 0;
 }
 
+static int qcom_fg_ima_access(struct qcom_fg_chip *chip, bool enable)
+{
+	u8 sts = 0;
+	int ret, i;
+
+	if (!enable)
+		return qcom_fg_masked_write(chip, MEM_INTF_CFG,
+				RIF_MEM_ACCESS_REQ | IACS_SLCT_BIT, 0);
+
+	ret = qcom_fg_masked_write(chip, MEM_INTF_CFG,
+			RIF_MEM_ACCESS_REQ | IACS_SLCT_BIT,
+			RIF_MEM_ACCESS_REQ | IACS_SLCT_BIT);
+	if (ret)
+		return ret;
+
+	usleep_range(35, 40);
+
+	for (i = 0; i < 250; i++) {
+		ret = qcom_fg_read(chip, &sts, MEM_INTF_IMA_OPR_STS, 1);
+		if (ret)
+			return ret;
+		if (sts & IACS_RDY_BIT)
+			return 0;
+		usleep_range(5000, 7000);
+	}
+
+	dev_err(chip->dev, "IMA access timeout, opr_sts=%#x\n", sts);
+	return -ETIMEDOUT;
+}
+
+static int qcom_fg_ima_write(struct qcom_fg_chip *chip, u16 word, u8 offset,
+			     const u8 *val, int len)
+{
+	u8 byte_en, addr[2];
+	int ret, n, i;
+
+	if (offset > 3 || len <= 0 || len > PROFILE_LEN)
+		return -EINVAL;
+
+	for (i = 0; i < 3; i++) {
+		ret = qcom_fg_clear_ima(chip, false);
+		if (ret != -EAGAIN)
+			break;
+		usleep_range(1000, 2000);
+	}
+	if (ret)
+		return ret;
+
+	ret = qcom_fg_ima_access(chip, true);
+	if (ret)
+		return ret;
+
+	ret = qcom_fg_masked_write(chip, MEM_INTF_CTL, IMA_CTL_MASK,
+			IMA_WR_EN_BIT | (len > 4 ? MEM_ACS_BURST_BIT : 0));
+	if (ret)
+		goto out;
+
+	addr[0] = word & 0xff;
+	addr[1] = 0;
+	ret = qcom_fg_write(chip, addr, MEM_INTF_ADDR_LSB, 2);
+	if (ret)
+		goto out;
+
+	while (len > 0) {
+		n = min(4 - offset, len);
+		byte_en = GENMASK(offset + n - 1, offset);
+
+		ret = qcom_fg_write(chip, &byte_en, MEM_INTF_IMA_BYTE_EN, 1);
+		if (ret)
+			goto out;
+
+		ret = qcom_fg_write(chip, (u8 *)val,
+				    MEM_INTF_WR_DATA0 + offset, n);
+		if (ret)
+			goto out;
+
+		if (!(byte_en & BIT(3))) {
+			u8 zero = 0;
+
+			ret = qcom_fg_write(chip, &zero, MEM_INTF_WR_DATA3, 1);
+			if (ret)
+				goto out;
+		}
+
+		for (i = 0; i < 3; i++) {
+			ret = qcom_fg_clear_ima(chip, false);
+			if (ret != -EAGAIN)
+				break;
+			usleep_range(1000, 2000);
+		}
+		if (ret)
+			goto out;
+
+		val += n;
+		len -= n;
+		word++;
+		offset = 0;
+	}
+
+out:
+	qcom_fg_ima_access(chip, false);
+
+	return ret;
+}
+
+static int qcom_fg_select_profile(struct qcom_fg_chip *chip, int batt_id_ohms)
+{
+	int i;
+
+	for (i = 0; i < chip->num_profiles; i++) {
+		u64 id_ohms = (u64)chip->profiles[i].batt_id_kohm * 1000;
+		u32 pct = chip->profiles[i].batt_id_range_pct;
+		u64 delta;
+
+		if (!id_ohms)
+			continue;
+		if (!pct)
+			pct = 15;
+		delta = div_u64(id_ohms * pct, 100);
+
+		if (batt_id_ohms >= id_ohms - delta &&
+		    batt_id_ohms <= id_ohms + delta)
+			return i;
+	}
+
+	return -ENOENT;
+}
+
+static void qcom_fg_profile_load_work(struct work_struct *work)
+{
+	struct qcom_fg_chip *chip = container_of(work, struct qcom_fg_chip,
+						 profile_load_work.work);
+	int batt_id = 0, idx = 0, ret, i;
+	u8 integrity, sts;
+
+	if (!chip->num_profiles)
+		return;
+
+	if (chip->batt_id_chan) {
+		ret = iio_read_channel_processed(chip->batt_id_chan, &batt_id);
+		if (ret < 0) {
+			dev_warn(chip->dev, "failed to read batt-id: %d\n", ret);
+			batt_id = 0;
+		}
+	}
+
+	if (batt_id > 0) {
+		idx = qcom_fg_select_profile(chip, batt_id);
+		if (idx < 0) {
+			dev_warn(chip->dev,
+				 "no profile matches batt-id %d ohm, using first\n",
+				 batt_id);
+			idx = 0;
+		}
+	}
+
+	dev_info(chip->dev, "batt-id %d ohm, loading profile %d (%u kohm)\n",
+		 batt_id, idx, chip->profiles[idx].batt_id_kohm);
+
+	ret = qcom_fg_ima_write(chip, PROFILE_LOAD_WORD, PROFILE_LOAD_OFFSET,
+				chip->profiles[idx].data, PROFILE_LEN);
+	if (ret) {
+		dev_err(chip->dev, "failed to load battery profile: %d\n", ret);
+		return;
+	}
+
+	integrity = PROFILE_LOAD_BIT | HLOS_RESTART_BIT;
+	ret = qcom_fg_ima_write(chip, PROFILE_INTEGRITY_WORD,
+				PROFILE_INTEGRITY_OFFSET, &integrity, 1);
+	if (ret) {
+		dev_err(chip->dev, "failed to set profile integrity: %d\n", ret);
+		return;
+	}
+
+	ret = qcom_fg_masked_write(chip, BATT_SOC_RESTART, RESTART_GO_BIT,
+				   RESTART_GO_BIT);
+	if (ret) {
+		dev_err(chip->dev, "failed to restart FG: %d\n", ret);
+		return;
+	}
+
+	for (i = 0; i < 100; i++) {
+		ret = qcom_fg_read(chip, &sts, BATT_SOC_INT_RT_STS, 1);
+		if (!ret && (sts & SOC_READY_BIT))
+			break;
+		msleep(50);
+	}
+
+	chip->profile_loaded = true;
+	dev_info(chip->dev, "battery profile loaded\n");
+	power_supply_changed(chip->batt_psy);
+}
+
+static int qcom_fg_parse_profiles(struct qcom_fg_chip *chip)
+{
+	struct device_node *profiles, *child;
+	int n = 0;
+
+	profiles = of_get_child_by_name(chip->dev->of_node,
+					"qcom,battery-profiles");
+	if (!profiles)
+		return 0;
+
+	for_each_child_of_node(profiles, child) {
+		const void *data;
+		int len;
+		u32 id_kohm, pct = 15;
+
+		data = of_get_property(child, "qcom,fg-profile-data", &len);
+		if (!data)
+			continue;
+
+		if (len != PROFILE_LEN) {
+			dev_warn(chip->dev, "%pOF: invalid profile length %d\n",
+				 child, len);
+			continue;
+		}
+
+		if (of_property_read_u32(child, "qcom,batt-id-kohm", &id_kohm)) {
+			dev_warn(chip->dev, "%pOF: missing qcom,batt-id-kohm\n",
+				 child);
+			continue;
+		}
+
+		of_property_read_u32(child, "qcom,batt-id-range-pct", &pct);
+
+		if (n >= ARRAY_SIZE(chip->profiles)) {
+			of_node_put(child);
+			break;
+		}
+
+		chip->profiles[n].batt_id_kohm = id_kohm;
+		chip->profiles[n].batt_id_range_pct = pct;
+		memcpy(chip->profiles[n].data, data, PROFILE_LEN);
+
+		dev_info(chip->dev, "profile %d: batt-id %u kohm +/- %u%%\n",
+			 n, id_kohm, pct);
+		n++;
+	}
+
+	of_node_put(profiles);
+
+	chip->num_profiles = n;
+
+	return n;
+}
+
 static irqreturn_t qcom_fg_handle_soc_delta(int irq, void *data)
 {
 	struct qcom_fg_chip *chip = data;
@@ -1191,6 +1476,28 @@ static int qcom_fg_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+	if (of_device_is_compatible(pdev->dev.of_node, "qcom,pmi8998-fg")) {
+		qcom_fg_parse_profiles(chip);
+
+		chip->batt_id_chan = devm_iio_channel_get(chip->dev,
+							  "rradc_batt_id");
+		if (IS_ERR(chip->batt_id_chan)) {
+			ret = PTR_ERR(chip->batt_id_chan);
+			if (ret == -EPROBE_DEFER)
+				return ret;
+			dev_warn(chip->dev, "batt-id channel unavailable: %d\n",
+				 ret);
+			chip->batt_id_chan = NULL;
+		}
+
+		if (chip->num_profiles) {
+			INIT_DELAYED_WORK(&chip->profile_load_work,
+					  qcom_fg_profile_load_work);
+			schedule_delayed_work(&chip->profile_load_work,
+					      msecs_to_jiffies(2000));
+		}
+	}
+
 	/* Initialize SRAM */
 	if (of_device_is_compatible(pdev->dev.of_node, "qcom,pmi8994-fg")) {
 		irq = of_irq_get_byname(pdev->dev.of_node, "mem-avail");
@@ -1304,6 +1611,9 @@ static void qcom_fg_remove(struct platform_device *pdev)
 {
 	struct qcom_fg_chip *chip = platform_get_drvdata(pdev);
 
+	if (chip->num_profiles)
+		cancel_delayed_work_sync(&chip->profile_load_work);
+
 	if(chip->sram_wq)
 		destroy_workqueue(chip->sram_wq);
 }
@@ -1326,6 +1636,7 @@ static struct platform_driver qcom_fg_driver = {
 
 module_platform_driver(qcom_fg_driver);
 
+MODULE_IMPORT_NS("IIO_CONSUMER");
 MODULE_AUTHOR("Caleb Connolly <caleb@connolly.tech>");
 MODULE_AUTHOR("Joel Selvaraj <jo@jsfamily.in>");
 MODULE_AUTHOR("Yassine Oudjana <y.oudjana@protonmail.com>");

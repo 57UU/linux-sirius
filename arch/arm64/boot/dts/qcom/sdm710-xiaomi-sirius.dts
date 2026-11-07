@@ -952,6 +952,69 @@
 	monitored-battery = <&battery>;
 	power-supplies = <&pm660_charger>;
 	status = "okay";
+
+	/*
+	 * PM660 RRADC channel 0 is the battery ID resistor.  The two
+	 * profiles below are the vendor packs (ATL 68k, Coslight 100k);
+	 * qcom_fg reads the ID and loads the matching 224-byte FG SRAM
+	 * profile at boot.
+	 */
+	io-channels = <&pm660_rradc 0>;
+	io-channel-names = "rradc_batt_id";
+
+	qcom,battery-profiles {
+		atl-3120mah {
+			qcom,batt-id-kohm = <68>;
+			qcom,batt-id-range-pct = <15>;
+			qcom,fg-profile-data = [
+				37 1F 1F FC 1B 0A 61 FD F1 1C 85 FB
+				2F 04 3F 0A AB 17 D5 23 7C 44 34 5A
+				76 00 00 00 11 00 00 00 00 00 00 A4
+				CA CD 06 BB 23 00 08 00 E3 E2 4A ED
+				9D 06 41 F3 2A 0C 47 FB 31 E4 40 2A
+				28 06 09 20 27 00 14 00 AC 1F A8 05
+				72 0A 50 06 B9 1C 26 03 CF 15 68 12
+				7C 18 D5 23 E8 4D 2C 5B 67 00 00 00
+				0E 00 00 00 00 00 E5 D5 03 00 41 C3
+				1C 00 00 00 FB EB 4A ED A2 F4 91 EB
+				82 F5 23 02 92 EA 20 1B AA 33 CC FF
+				07 10 00 00 E0 0B 66 46 1C 00 40 00
+				98 01 0A FA FF 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00
+			];
+		};
+
+		coslight-3120mah {
+			qcom,batt-id-kohm = <100>;
+			qcom,batt-id-range-pct = <15>;
+			qcom,fg-profile-data = [
+				24 1F 47 FC 02 0A A5 FD E5 1C E7 01
+				CD 0D 8C 0A E9 17 BF 23 78 44 47 5A
+				72 00 00 00 10 00 00 00 00 00 71 B5
+				A2 CD 83 BA 24 00 08 00 28 00 DB ED
+				AF FC 1D FA AF 0D FE 02 FA D3 AE 2B
+				28 06 09 20 27 00 14 00 E8 1F 60 05
+				9B 0A 37 06 C1 1C 0F 03 E3 15 4B 12
+				84 18 F6 23 C1 4D 89 5B 6A 00 00 00
+				0D 00 00 00 00 00 C8 D5 0A CA 06 BB
+				1C 00 00 00 0C EB DB ED 2A F4 1E F2
+				DE ED CE 02 23 01 5B 1B B4 33 CC FF
+				07 10 00 00 26 0C 66 46 1C 00 40 00
+				8E 01 0A FA FF 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00 00 00 00 00
+				00 00 00 00 00 00 00 00
+			];
+		};
+	};
 };
 
 &pm660_haptics {
