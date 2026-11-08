@@ -745,17 +745,43 @@ static int smb_set_property(struct power_supply *psy,
 			     const union power_supply_propval *val)
 {
 	struct smb_chip *chip = power_supply_get_drvdata(psy);
+	int ret;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
-		return regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
-					  USBIN_SUSPEND_BIT, !val->intval);
+		ret = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
+					 USBIN_SUSPEND_BIT, !val->intval);
+		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		return smb_set_current_limit(chip, val->intval);
+		ret = smb_set_current_limit(chip, val->intval);
+		break;
 	default:
 		dev_err(chip->dev, "No setter for property: %d\n", psp);
 		return -EINVAL;
 	}
+
+	if (ret)
+		return ret;
+
+	/*
+	 * Re-run the charger detection when charging is resumed: clearing the
+	 * suspend bit restarts the USB input state machine, so the status seen
+	 * right after the write is only transient.  The worker notifies again
+	 * once APSD has completed.
+	 */
+	if (psp == POWER_SUPPLY_PROP_STATUS && val->intval)
+		schedule_delayed_work(&chip->status_change_work,
+				      msecs_to_jiffies(1500));
+
+	/*
+	 * Software-driven changes (e.g. suspending USBIN to stop charging
+	 * while keeping the USB data link) do not raise an interrupt, so
+	 * notify the listeners explicitly.  The fuel gauge caches the charger
+	 * status and would otherwise keep reporting a stale status.
+	 */
+	power_supply_changed(chip->chg_psy);
+
+	return 0;
 }
 
 static int smb_property_is_writable(struct power_supply *psy,
